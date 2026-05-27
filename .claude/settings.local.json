@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(psql -U postgres -c \"\\\\du finsense_user\")",
+      "Bash(psql -h localhost -U postgres -c \"\\\\du finsense_user\")",
+      "Bash(pg_lsclusters)",
+      "Bash(psql postgresql://finsense_user:finsense_pass@localhost:5433/finsense_db -c ' *)"
+    ]
+  }
+}

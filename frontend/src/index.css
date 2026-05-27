@@ -1,0 +1,318 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Light mode design tokens (default) ── */
+:root {
+  /* Core surfaces */
+  --background:                 #f7f9fc;
+  --surface:                    #ffffff;
+  --surface-container-lowest:   #ffffff;
+  --surface-container-low:      #f2f4f7;
+  --surface-container:          #eceef1;
+  --surface-container-high:     #e6e8eb;
+  --surface-container-highest:  #dee0e3;
+
+  /* Primary (teal-green) */
+  --primary:                    #006b5d;
+  --on-primary:                 #ffffff;
+  --primary-container:          #2ab5a0;
+  --on-primary-container:       #ffffff;
+
+  /* Secondary */
+  --secondary:                  #4f5e80;
+  --on-secondary:               #ffffff;
+  --secondary-container:        #d7e3ff;
+
+  /* Tertiary */
+  --tertiary:                   #9a442c;
+  --on-tertiary:                #ffffff;
+  --tertiary-container:         #ee8568;
+  --on-tertiary-container:      #ffffff;
+
+  /* Error */
+  --error:                      #ba1a1a;
+  --on-error:                   #ffffff;
+  --error-container:            #ffdad6;
+
+  /* Text */
+  --on-surface:                 #191c1e;
+  --on-surface-variant:         #3d4946;
+  --on-background:              #191c1e;
+
+  /* Borders */
+  --outline:                    #6c7a76;
+  --outline-variant:            #bbcac5;
+
+  /* Status colors */
+  --positive:                   #006b5d;
+  --negative:                   #ba1a1a;
+  --warning:                    #d4932a;
+  --info:                       #4a8ed4;
+  --purple:                     #8b7fd4;
+
+  /* Sidebar (always dark) */
+  --sidebar-bg:                 #0B1426;
+  --sidebar-text:               #8ba8c8;
+  --sidebar-active-text:        #5bddc4;
+  --sidebar-active-border:      #2ab5a0;
+
+  /* Fonts */
+  --font-body:   'Inter', sans-serif;
+  --font-mono:   'JetBrains Mono', monospace;
+
+  /* Shadows */
+  --shadow-card:  0px 4px 12px rgba(0,0,0,0.05);
+  --shadow-md:    0px 8px 24px rgba(0,0,0,0.08);
+
+  /* Scrollbar */
+  --scrollbar-track: #f2f4f7;
+  --scrollbar-thumb: rgba(0,0,0,0.1);
+  --scrollbar-thumb-hover: rgba(0,0,0,0.18);
+
+  /* Inputs */
+  --input-bg:          #ffffff;
+  --input-text:        #191c1e;
+  --input-placeholder: #6c7a76;
+  --input-border:      #bbcac5;
+  --input-focus:       #2ab5a0;
+}
+
+/* ── Dark mode ── */
+html.dark {
+  /* Surfaces — clear depth hierarchy */
+  --background:               #0b1220;
+  --surface:                  #141e30;
+  --surface-container-lowest: #0b1220;
+  --surface-container-low:    #1a2840;
+  --surface-container:        #1e2f4e;
+  --surface-container-high:   #24375a;
+
+  /* Text */
+  --on-surface:               #ddeaf8;
+  --on-surface-variant:       #7898ba;
+
+  /* Brand */
+  --primary:                  #5bddc4;
+  --primary-container:        #2ab5a0;
+
+  /* Status — brighter for dark BG readability */
+  --error:                    #ff6b6b;
+  --error-container:          rgba(255,107,107,0.15);
+  --negative:                 #ff6b6b;
+  --positive:                 #2ab5a0;
+  --warning:                  #ffa040;
+  --info:                     #5ba8e8;
+  --purple:                   #a890f0;
+
+  /* Borders */
+  --outline:                  #3a5876;
+  --outline-variant:          rgba(255,255,255,0.08);
+
+  /* Shadows — deep for dark-on-dark elevation */
+  --shadow-card:              0 4px 20px rgba(0,0,0,0.5);
+  --shadow-md:                0 8px 32px rgba(0,0,0,0.6);
+
+  /* Inputs */
+  --input-bg:                 #1a2840;
+  --input-text:               #ddeaf8;
+  --input-placeholder:        #4a6a8c;
+  --input-border:             rgba(255,255,255,0.1);
+
+  /* Scrollbar */
+  --scrollbar-track:          #0b1220;
+  --scrollbar-thumb:          rgba(255,255,255,0.1);
+  --scrollbar-thumb-hover:    rgba(255,255,255,0.18);
+}
+
+/* ── Dark mode: fix hardcoded white card backgrounds ── */
+html.dark .bg-white {
+  background-color: var(--surface) !important;
+}
+html.dark .rounded-xl.bg-white,
+html.dark .rounded-2xl.bg-white {
+  border: 1px solid rgba(255,255,255,0.07) !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5) !important;
+}
+
+/* ── Dark mode: table/section headers inside cards ── */
+html.dark thead tr,
+html.dark .table-header-row {
+  background-color: var(--surface-container-low) !important;
+}
+
+/* ── Dark mode: shimmer loading placeholders ── */
+html.dark .shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.02) 25%,
+    rgba(255,255,255,0.06) 50%,
+    rgba(255,255,255,0.02) 75%
+  ) !important;
+  background-size: 200% 100% !important;
+}
+
+/* ── Dark mode: donut chart inner circle ── */
+html.dark .donut-inner {
+  background: var(--surface) !important;
+}
+
+/* ── Dark mode: TopBar shadow ── */
+html.dark .topbar-shadow {
+  box-shadow: 0 1px 0 rgba(255,255,255,0.05) !important;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--on-surface);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: 14px;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track); }
+
+/* ── Inputs ── */
+input, textarea, select {
+  background-color: var(--input-bg) !important;
+  color: var(--input-text) !important;
+  font-family: var(--font-body);
+  border-color: var(--input-border);
+}
+input::placeholder, textarea::placeholder {
+  color: var(--input-placeholder) !important;
+}
+
+/* ── Range slider ── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-track {
+  background: var(--outline-variant);
+  height: 4px;
+  border-radius: 2px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--primary-container);
+  margin-top: -6px;
+  cursor: pointer;
+  border: 2px solid white;
+}
+input[type="range"]::-moz-range-track {
+  background: var(--outline-variant);
+  height: 4px;
+  border-radius: 2px;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--primary-container);
+  cursor: pointer;
+  border: 2px solid white;
+}
+
+/* ── Toggle switch ── */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+}
+.toggle-switch input { opacity: 0 !important; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: var(--outline-variant);
+  transition: 0.3s;
+  border-radius: 20px;
+}
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+input:checked + .toggle-slider { background-color: var(--primary-container); }
+input:checked + .toggle-slider:before { transform: translateX(18px); }
+
+/* ── Shimmer ── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, rgba(0,0,0,0.03) 25%, rgba(0,0,0,0.06) 50%, rgba(0,0,0,0.03) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite;
+}
+
+/* ── Animations ── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fadeIn 0.25s ease-out forwards; }
+
+/* ── Modal backdrop ── */
+.modal-backdrop {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* ── Sidebar ── */
+.sidebar-bg { background-color: var(--sidebar-bg) !important; }
+.sidebar-transition { transition: width 0.2s ease; }
+
+/* ── Slider thumb (visible teal thumb) ── */
+.slider-thumb { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; width: 100%; }
+.slider-thumb::-webkit-slider-runnable-track { background: var(--outline-variant); height: 4px; border-radius: 2px; }
+.slider-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 18px; height: 18px;
+  background: #2ab5a0; cursor: pointer;
+  border-radius: 50%; border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+  margin-top: -7px;
+}
+.slider-thumb::-moz-range-track { background: var(--outline-variant); height: 4px; border-radius: 2px; }
+.slider-thumb::-moz-range-thumb {
+  width: 18px; height: 18px;
+  background: #2ab5a0; cursor: pointer;
+  border-radius: 50%; border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+}
+
+/* ── CSS Donut Chart ── */
+.custom-donut { border-radius: 50%; }
+.donut-inner { background: white; border-radius: 50%; width: 70%; height: 70%; }

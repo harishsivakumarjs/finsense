@@ -1,0 +1,72 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        background:                 'var(--background)',
+        surface:                    'var(--surface)',
+        'surface-container-lowest': 'var(--surface-container-lowest)',
+        'surface-container-low':    'var(--surface-container-low)',
+        'surface-container':        'var(--surface-container)',
+        'surface-container-high':   'var(--surface-container-high)',
+        primary:                    'var(--primary)',
+        'on-primary':               'var(--on-primary)',
+        'primary-container':        'var(--primary-container)',
+        'on-primary-container':     'var(--on-primary-container)',
+        secondary:                  'var(--secondary)',
+        'secondary-container':      'var(--secondary-container)',
+        tertiary:                   'var(--tertiary)',
+        'tertiary-container':       'var(--tertiary-container)',
+        'on-tertiary-container':    'var(--on-tertiary-container)',
+        error:                      'var(--error)',
+        'error-container':          'var(--error-container)',
+        'on-surface':               'var(--on-surface)',
+        'on-surface-variant':       'var(--on-surface-variant)',
+        outline:                    'var(--outline)',
+        'outline-variant':          'var(--outline-variant)',
+        positive:                   'var(--positive)',
+        negative:                   'var(--negative)',
+        warning:                    'var(--warning)',
+        info:                       'var(--info)',
+        purple:                     'var(--purple)',
+        // Legacy aliases (keep working old code)
+        dark:     'var(--background)',
+        card:     'var(--surface)',
+        teal:     'var(--primary-container)',
+        accent:   'var(--primary-container)',
+        danger:   'var(--error)',
+      },
+      fontFamily: {
+        sans:  ['Inter', 'sans-serif'],
+        mono:  ['"JetBrains Mono"', 'monospace'],
+        data:  ['"JetBrains Mono"', 'monospace'],
+        // Legacy
+        body:    ['Inter', 'sans-serif'],
+        heading: ['Inter', 'sans-serif'],
+      },
+      fontSize: {
+        'display-lg':  ['32px', { lineHeight: '40px', fontWeight: '700' }],
+        'headline-sm': ['20px', { lineHeight: '28px', fontWeight: '600' }],
+        'title-lg':    ['18px', { lineHeight: '26px', fontWeight: '600' }],
+        'title-md':    ['16px', { lineHeight: '24px', fontWeight: '600' }],
+        'body-md':     ['14px', { lineHeight: '20px', fontWeight: '400' }],
+        'label-sm':    ['12px', { lineHeight: '16px', fontWeight: '500' }],
+        'data-lg':     ['24px', { lineHeight: '32px', fontWeight: '600', fontFamily: '"JetBrains Mono"' }],
+        'data-md':     ['16px', { lineHeight: '24px', fontWeight: '500', fontFamily: '"JetBrains Mono"' }],
+        'data-sm':     ['13px', { lineHeight: '18px', fontWeight: '400', fontFamily: '"JetBrains Mono"' }],
+      },
+      boxShadow: {
+        card: '0px 4px 12px rgba(0,0,0,0.05)',
+        md:   '0px 8px 24px rgba(0,0,0,0.08)',
+      },
+      borderRadius: {
+        card: '12px',
+      },
+    },
+  },
+  plugins: [],
+}
