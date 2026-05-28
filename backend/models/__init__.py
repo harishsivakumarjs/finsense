@@ -1,7 +1,7 @@
 from .user import User
 from .income import IncomeEntry
 from .expense import Expense, Budget
-from .loan import Loan, CreditCard
+from .loan import Loan, CreditCard, DebtPayment
 from .trade import Trade, TradingLossCarryforward
 from .investment import Investment
 from .creator import CreatorIncome
@@ -16,6 +16,7 @@ __all__ = [
     "Budget",
     "Loan",
     "CreditCard",
+    "DebtPayment",
     "Trade",
     "TradingLossCarryforward",
     "Investment",

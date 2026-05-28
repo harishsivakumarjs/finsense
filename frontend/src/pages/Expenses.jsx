@@ -48,6 +48,8 @@ export default function Expenses() {
   const [editItem, setEditItem] = useState(null)
   const [detail, setDetail] = useState(null)
   const [budget, setBudget] = useState(() => parseInt(localStorage.getItem(BUDGET_KEY) || '50000', 10))
+  const [showBudgetModal, setShowBudgetModal] = useState(false)
+  const [budgetInput, setBudgetInput] = useState('')
   const [form, setForm] = useState({
     amount: '', category: 'food', description: '',
     spent_on: today.toISOString().split('T')[0], is_recurring: false, is_creator_expense: false,
@@ -61,9 +63,10 @@ export default function Expenses() {
         api.get('/expenses/summary', { params: { month, year } }),
         api.get('/expenses/subscriptions'),
       ])
-      setExpenses(expRes.data)
-      setSummary(sumRes.data)
-      setSubscriptions(subRes.data)
+      console.log("API response expenses:", expRes.data, "summary:", sumRes.data, "subscriptions:", subRes.data)
+      setExpenses(Array.isArray(expRes.data) ? expRes.data : [])
+      setSummary(Array.isArray(sumRes.data) ? sumRes.data : [])
+      setSubscriptions(Array.isArray(subRes.data) ? subRes.data : [])
     } catch { toast.error('Failed to load') }
     finally { setLoading(false) }
   }
@@ -119,9 +122,9 @@ export default function Expenses() {
   const sortedDates = Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a))
 
   return (
-    <div className="p-6 space-y-5" style={{ backgroundColor: 'var(--background)', minHeight: '100%' }}>
+    <div className="p-4 md:p-6 space-y-5" style={{ backgroundColor: 'var(--background)', minHeight: '100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--on-surface)' }}>Expenses</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--on-surface-variant)' }}>Track and manage your spending</p>
@@ -172,13 +175,16 @@ export default function Expenses() {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label: 'Total Spent', value: formatINR(totalSpent), icon: <Receipt size={18} />, color:'var(--error)', sub: `${expenses.length} transactions` },
-          { label: 'Monthly Budget', value: formatINR(budget), icon: <Target size={18} />, color: '#2ab5a0', sub: 'Set budget limit' },
+          { label: 'Monthly Budget', value: formatINR(budget), icon: <Target size={18} />, color: '#2ab5a0', sub: 'Click to edit budget', onClick: () => { setBudgetInput(budget.toString()); setShowBudgetModal(true) } },
           { label: remaining >= 0 ? 'Remaining' : 'Over Budget', value: formatINR(Math.abs(remaining)), icon: <DollarSign size={18} />, color: remaining >= 0 ? '#006b5d' : '#ba1a1a', sub: remaining >= 0 ? `${((totalSpent/budget)*100).toFixed(0)}% used` : 'Budget exceeded' },
-        ].map(({ label, value, icon, color, sub }) => (
-          <Card key={label} className="p-5">
+        ].map(({ label, value, icon, color, sub, onClick }) => (
+          <Card key={label} className="p-5" style={{ cursor: onClick ? 'pointer' : 'default' }}
+            onClick={onClick}
+            onMouseEnter={onClick ? e => e.currentTarget.style.boxShadow='0px 6px 18px rgba(0,0,0,0.1)' : undefined}
+            onMouseLeave={onClick ? e => e.currentTarget.style.boxShadow='0px 4px 12px rgba(0,0,0,0.05)' : undefined}>
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--on-surface-variant)' }}>{label}</p>
               <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${color}15`, color }}>
@@ -192,9 +198,9 @@ export default function Expenses() {
       </div>
 
       {/* Main content: col-span-5 left, col-span-7 right */}
-      <div className="grid grid-cols-12 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* LEFT — Category bars + Subscriptions */}
-        <div className="col-span-5 space-y-4">
+        <div className="lg:col-span-5 space-y-4">
           <Card className="p-5">
             <h3 className="text-base font-semibold mb-4" style={{ color: 'var(--on-surface)' }}>Spending by Category</h3>
             {loading ? (
@@ -263,14 +269,14 @@ export default function Expenses() {
         </div>
 
         {/* RIGHT — Expenses Table */}
-        <Card className="col-span-7 overflow-hidden">
+        <Card className="lg:col-span-7 overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--outline-variant)' }}>
             <h3 className="text-base font-semibold" style={{ color: 'var(--on-surface)' }}>All Expenses</h3>
             <div className="relative">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--on-surface-variant)' }} />
               <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
-                className="pl-9 pr-4 py-2 rounded-lg text-sm focus:outline-none"
-                style={{ width: 180, backgroundColor: 'var(--surface-container-low)', border: '1px solid var(--outline-variant)', color: 'var(--on-surface)' }} />
+                className="pl-9 pr-4 py-2 rounded-lg text-sm focus:outline-none w-full max-w-[180px]"
+                style={{ backgroundColor: 'var(--surface-container-low)', border: '1px solid var(--outline-variant)', color: 'var(--on-surface)' }} />
             </div>
           </div>
           {/* Category filter chips */}
@@ -365,7 +371,30 @@ export default function Expenses() {
           { label: 'Recurring', value: detail.is_recurring ? 'Yes' : 'No' },
           { label: 'Amount', value: `-${formatINR(detail.amount)}`, valueStyle: { color: 'var(--error)', fontFamily: 'monospace' } },
         ] : []}
+        actions={detail ? [
+          { label: 'Edit', icon: <Pencil size={15} />, onClick: () => { setDetail(null); openEdit(detail) }, bg: 'var(--surface-container-low)', color: 'var(--on-surface-variant)', border: '1px solid var(--outline-variant)' },
+          { label: 'Delete', icon: <Trash2 size={15} />, onClick: () => { if (!confirm('Delete expense?')) return; api.delete(`/expenses/${detail.id}`).then(() => { toast.success('Deleted'); setDetail(null); load() }).catch(() => toast.error('Failed')) }, bg: 'rgba(186,26,26,0.08)', color: 'var(--error)' },
+        ] : []}
       />
+
+      <Modal isOpen={showBudgetModal} onClose={() => setShowBudgetModal(false)} title="Set Monthly Budget">
+        <div className="space-y-4">
+          <p className="text-sm" style={{ color: 'var(--on-surface-variant)' }}>Set your monthly spending budget limit.</p>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--on-surface-variant)' }}>Budget Amount (₹)</p>
+            <input type="number" value={budgetInput} onChange={e => setBudgetInput(e.target.value)}
+              placeholder="50000" className="w-full px-4 py-3 rounded-lg text-sm focus:outline-none border"
+              style={{ backgroundColor: 'var(--surface-container-low)', borderColor: 'var(--outline-variant)', color: 'var(--on-surface)' }}
+              onKeyDown={e => { if (e.key === 'Enter') { const v = parseInt(budgetInput, 10); if (v > 0) { setBudget(v); localStorage.setItem(BUDGET_KEY, v); setShowBudgetModal(false) } } }}
+              autoFocus />
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button onClick={() => setShowBudgetModal(false)} className="flex-1 py-3 rounded-lg text-sm font-medium border" style={{ borderColor: 'var(--outline-variant)', color: 'var(--on-surface-variant)' }}>Cancel</button>
+            <button onClick={() => { const v = parseInt(budgetInput, 10); if (v > 0) { setBudget(v); localStorage.setItem(BUDGET_KEY, v); setShowBudgetModal(false) } else toast.error('Enter valid amount') }}
+              className="flex-1 py-3 rounded-lg text-sm font-semibold" style={{ backgroundColor: '#2ab5a0', color: 'white' }}>Save Budget</button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Edit Expense' : 'Add Expense'}>

@@ -62,7 +62,8 @@ export default function Income() {
         api.get('/income', { params: { month, year } }),
         api.get('/income/streams', { params: { month, year } }),
       ])
-      setIncomes(incRes.data)
+      console.log("API response income:", incRes.data)
+      setIncomes(Array.isArray(incRes.data) ? incRes.data : [])
       setSummary(Array.isArray(sumRes.data) ? sumRes.data : [])
     } catch { toast.error('Failed to load income') }
     finally { setLoading(false) }
@@ -107,9 +108,9 @@ export default function Income() {
   const barData = summary.map(s => ({ name: s.source_type.replace('_', ' '), value: s.total, fill: SOURCE_COLORS[s.source_type] || '#6c7a76' }))
 
   return (
-    <div className="p-6 space-y-5" style={{ backgroundColor: 'var(--background)', minHeight: '100%' }}>
+    <div className="p-4 md:p-6 space-y-5" style={{ backgroundColor: 'var(--background)', minHeight: '100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--on-surface)' }}>Income</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--on-surface-variant)' }}>Track your income sources</p>
@@ -161,7 +162,7 @@ export default function Income() {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Total Income', value: formatINR(totalIncome), icon: <TrendingUp size={18} />, color: '#2ab5a0', sub: `${incomes.length} entries` },
           { label: 'Top Source', value: topSource ? formatINR(topSource.total) : '₹0', icon: <ArrowUpRight size={18} />, color:'var(--positive)', sub: topSource?.source_type?.replace('_', ' ') || 'No data' },
@@ -181,9 +182,9 @@ export default function Income() {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Bar Chart */}
-        <Card className="col-span-2 p-5">
+        <Card className="lg:col-span-2 p-5">
           <h3 className="text-base font-semibold mb-4" style={{ color: 'var(--on-surface)' }}>Income By Source</h3>
           {loading || barData.length === 0 ? (
             <div className="h-48 flex items-center justify-center" style={{ color: 'var(--on-surface-variant)' }}>
@@ -239,8 +240,8 @@ export default function Income() {
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--on-surface-variant)' }} />
             <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
-              className="pl-9 pr-4 py-2 rounded-lg text-sm focus:outline-none"
-              style={{ width: 200, backgroundColor: 'var(--surface-container-low)', border: '1px solid var(--outline-variant)', color: 'var(--on-surface)' }} />
+              className="pl-9 pr-4 py-2 rounded-lg text-sm focus:outline-none w-full max-w-[200px]"
+              style={{ backgroundColor: 'var(--surface-container-low)', border: '1px solid var(--outline-variant)', color: 'var(--on-surface)' }} />
           </div>
         </div>
         <div className="overflow-x-auto">

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Search, Check, Users, Download, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Search, Check, Users, Download, Pencil, Trash2, CheckCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../api/axios'
 import Modal from '../components/Modal'
@@ -25,6 +25,7 @@ export default function Friends() {
   const [showModal, setShowModal] = useState(false)
   const [editEntry, setEditEntry] = useState(null)
   const [detail, setDetail] = useState(null)
+  const [settleConfirm, setSettleConfirm] = useState(null) // entry to settle
   const [form, setForm] = useState(BLANK_FORM)
 
   const load = async () => {
@@ -34,7 +35,8 @@ export default function Friends() {
         api.get('/friends'),
         api.get('/friends/summary'),
       ])
-      setEntries(entriesR.data)
+      console.log("API response friends:", entriesR.data, "summary:", sumR.data)
+      setEntries(Array.isArray(entriesR.data) ? entriesR.data : [])
       setSummary(sumR.data)
     } catch { toast.error('Failed to load') }
     finally { setLoading(false) }
@@ -79,6 +81,9 @@ export default function Friends() {
   const filtered = entries.filter(e => {
     const match = e.friend_name.toLowerCase().includes(search.toLowerCase()) || (e.reason||'').toLowerCase().includes(search.toLowerCase())
     if (filter === 'unsettled') return match && !e.is_settled
+    if (filter === 'settled') return match && e.is_settled
+    if (filter === 'receivable') return match && parseFloat(e.amount) > 0
+    if (filter === 'payable') return match && parseFloat(e.amount) < 0
     return match
   })
 
@@ -86,9 +91,9 @@ export default function Friends() {
   const netVal = s?.net || 0
 
   return (
-    <div className="p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
+    <div className="p-4 md:p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color:'var(--on-surface)' }}>Friends Ledger</h1>
           <p className="text-sm mt-0.5" style={{ color:'var(--on-surface-variant)' }}>Track money owed and lent</p>
@@ -104,14 +109,14 @@ export default function Friends() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card className="p-5" style={{ borderLeft:'4px solid #006b5d' }}>
-          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color:'var(--on-surface-variant)' }}>You Are Owed</p>
+          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color:'var(--on-surface-variant)' }}>Money You Will Receive</p>
           <p className="text-3xl font-bold font-mono" style={{ color:'var(--positive)' }}>{loading ? '—' : formatINR(s?.total_receivable || 0)}</p>
           <p className="text-sm mt-1" style={{ color:'var(--on-surface-variant)' }}>From {s?.receivable_friends_count || 0} friend(s)</p>
         </Card>
         <Card className="p-5" style={{ borderLeft:'4px solid #d4932a' }}>
-          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color:'var(--on-surface-variant)' }}>You Owe</p>
+          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color:'var(--on-surface-variant)' }}>Money You Need To Pay</p>
           <p className="text-3xl font-bold font-mono" style={{ color:'#d4932a' }}>{loading ? '—' : formatINR(s?.total_payable || 0)}</p>
           <p className="text-sm mt-1" style={{ color:'var(--on-surface-variant)' }}>To {s?.payable_friends_count || 0} friend(s)</p>
         </Card>
@@ -128,11 +133,11 @@ export default function Friends() {
                 className="pl-9 pr-4 py-2 rounded-lg text-sm focus:outline-none"
                 style={{ width:200, backgroundColor:'var(--surface-container-low)', border:'1px solid var(--outline-variant)', color:'var(--on-surface)' }} />
             </div>
-            <div className="flex rounded-lg overflow-hidden" style={{ border:'1px solid var(--outline-variant)' }}>
-              {[['all','All'],['unsettled','Unsettled']].map(([f,l]) => (
+            <div className="flex rounded-lg overflow-hidden flex-wrap" style={{ border:'1px solid var(--outline-variant)' }}>
+              {[['all','All'],['unsettled','Unsettled'],['settled','Settled'],['receivable','Will Receive'],['payable','Need To Pay']].map(([f,l]) => (
                 <button key={f} onClick={() => setFilter(f)}
-                  className="px-4 py-2 text-xs font-semibold transition-colors"
-                  style={{ backgroundColor:filter===f?'#2ab5a0':'transparent', color:filter===f?'white':'var(--on-surface-variant)' }}>
+                  className="px-3 py-2 text-xs font-semibold transition-colors"
+                  style={{ backgroundColor:filter===f?'#2ab5a0':'transparent', color:filter===f?'white':'var(--on-surface-variant)', borderRight:'1px solid var(--outline-variant)' }}>
                   {l}
                 </button>
               ))}
@@ -192,9 +197,9 @@ export default function Friends() {
                       )}
                     </td>
                     <td className="px-5 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                         {!entry.is_settled && (
-                          <button onClick={() => settleUp(entry.id)} className="p-1.5 rounded-lg" title="Settle"
+                          <button onClick={() => setSettleConfirm(entry)} className="p-1.5 rounded-lg" title="Settle"
                             style={{ color:'var(--on-surface-variant)' }}
                             onMouseEnter={e => e.currentTarget.style.color='#006b5d'}
                             onMouseLeave={e => e.currentTarget.style.color='var(--on-surface-variant)'}>
@@ -251,11 +256,85 @@ export default function Friends() {
             { label: 'Amount', value: `${isReceivable ? '+' : '-'}${formatINR(Math.abs(amt))}`, valueStyle: { fontFamily: 'monospace', color: isReceivable ? '#006b5d' : '#d4932a' } },
             { label: 'Reason', value: detail.reason || '—' },
             { label: 'Date', value: formatDate(detail.date) },
-            { label: 'Days Since', value: `${daysSince} days` },
+            { label: 'Days Since', value: `${Math.floor((new Date() - new Date(detail.date)) / 86400000)} days` },
             { label: 'Status', value: detail.is_settled ? 'Settled' : 'Pending' },
           ]
         })() : []}
+        actions={detail ? [
+          ...(!detail.is_settled ? [{
+            label: 'Settle Up',
+            icon: <CheckCircle size={15} />,
+            onClick: () => { setSettleConfirm(detail); setDetail(null) },
+            bg: 'rgba(0,107,93,0.12)',
+            color: '#006b5d',
+          }] : []),
+          {
+            label: 'Edit',
+            icon: <Pencil size={15} />,
+            onClick: () => { setDetail(null); openEdit(detail) },
+            bg: 'var(--surface-container-low)',
+            color: 'var(--on-surface-variant)',
+            border: '1px solid var(--outline-variant)',
+          },
+          {
+            label: 'Delete',
+            icon: <Trash2 size={15} />,
+            onClick: () => {
+              if (!confirm('Delete this entry?')) return
+              api.delete(`/friends/${detail.id}`)
+                .then(() => { toast.success('Deleted'); setDetail(null); load() })
+                .catch(() => toast.error('Failed to delete'))
+            },
+            bg: 'rgba(186,26,26,0.08)',
+            color: 'var(--error)',
+          },
+        ] : []}
       />
+
+      {/* Settle Up Confirmation */}
+      {settleConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor:'rgba(0,0,0,0.45)' }}
+          onClick={e => { if (e.target === e.currentTarget) setSettleConfirm(null) }}>
+          <div className="w-full max-w-sm rounded-2xl mx-4 overflow-hidden"
+            style={{ backgroundColor:'var(--surface)', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div className="px-5 py-4" style={{ borderBottom:'1px solid var(--outline-variant)' }}>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor:'rgba(0,107,93,0.12)' }}>
+                  <CheckCircle size={16} style={{ color:'#006b5d' }} />
+                </div>
+                <span className="text-sm font-semibold" style={{ color:'var(--on-surface)' }}>Settle Payment</span>
+              </div>
+            </div>
+            <div className="px-5 py-5">
+              <p className="text-sm font-medium mb-1" style={{ color:'var(--on-surface)' }}>
+                Have you settled this payment?
+              </p>
+              <p className="text-sm" style={{ color:'var(--on-surface-variant)' }}>
+                <span className="font-semibold" style={{ color:'var(--on-surface)' }}>{settleConfirm.friend_name}</span>
+                {' · '}
+                <span className="font-mono font-semibold" style={{ color: parseFloat(settleConfirm.amount) > 0 ? '#006b5d' : '#d4932a' }}>
+                  {parseFloat(settleConfirm.amount) > 0 ? '+' : '-'}{formatINR(Math.abs(parseFloat(settleConfirm.amount)))}
+                </span>
+              </p>
+              {settleConfirm.reason && (
+                <p className="text-xs mt-1" style={{ color:'var(--on-surface-variant)' }}>{settleConfirm.reason}</p>
+              )}
+            </div>
+            <div className="px-5 pb-5 flex gap-3">
+              <button onClick={() => setSettleConfirm(null)}
+                className="flex-1 py-2.5 rounded-lg text-sm font-medium border"
+                style={{ borderColor:'var(--outline-variant)', color:'var(--on-surface-variant)' }}>
+                Cancel
+              </button>
+              <button onClick={() => { settleUp(settleConfirm.id); setSettleConfirm(null) }}
+                className="flex-1 py-2.5 rounded-lg text-sm font-semibold"
+                style={{ backgroundColor:'#006b5d', color:'white' }}>
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editEntry ? 'Edit Entry' : 'Add Entry'}>

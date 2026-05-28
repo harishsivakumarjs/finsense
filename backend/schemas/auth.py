@@ -35,6 +35,7 @@ class UserOut(BaseModel):
     email: str
     name: str
     mobile: Optional[str] = None
+    photo: Optional[str] = None
     mode: str
     created_at: datetime
 
@@ -60,6 +61,7 @@ class ModeUpdate(BaseModel):
 
 class ProfileUpdate(BaseModel):
     mobile: Optional[str] = None
+    photo: Optional[str] = None
 
 
 class PasswordUpdate(BaseModel):

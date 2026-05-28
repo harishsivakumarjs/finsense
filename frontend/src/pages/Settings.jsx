@@ -31,7 +31,7 @@ export default function Settings() {
   const [notifToggles, setNotifToggles] = useState({
     emi: true, insurance: true, budget: false, weekly: true, milestones: true,
   })
-  const [avatar, setAvatar] = useState(() => localStorage.getItem('finsense_avatar') || null)
+  const [avatar, setAvatar] = useState(() => user?.photo || localStorage.getItem('finsense_avatar') || null)
   const [mobile, setMobile] = useState(user?.mobile || '')
   const fileInputRef = useRef(null)
 
@@ -64,11 +64,17 @@ export default function Settings() {
     if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return }
     if (file.size > 2 * 1024 * 1024) { toast.error('Image must be under 2MB'); return }
     const reader = new FileReader()
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const dataUrl = ev.target.result
       setAvatar(dataUrl)
       setStoreAvatar(dataUrl)
-      toast.success('Photo updated')
+      try {
+        const res = await api.put('/auth/profile', { photo: dataUrl })
+        setUser(res.data)
+        toast.success('Photo updated')
+      } catch {
+        toast.error('Photo saved locally but could not sync to server')
+      }
     }
     reader.readAsDataURL(file)
   }
@@ -148,17 +154,17 @@ export default function Settings() {
     : '?'
 
   return (
-    <div className="p-6" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
+    <div className="p-4 md:p-6" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
       <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="mb-6">
+        <div className="mb-5 md:mb-6">
           <h1 className="text-2xl font-bold" style={{ color:'var(--on-surface)' }}>Settings</h1>
           <p className="text-sm mt-0.5" style={{ color:'var(--on-surface-variant)' }}>Manage your account and preferences</p>
         </div>
 
-        <div className="flex gap-6">
+        <div className="flex flex-col sm:flex-row gap-4 md:gap-6">
           {/* Left Nav */}
-          <div className="w-52 flex-shrink-0 space-y-1">
+          <div className="w-full sm:w-52 flex-shrink-0 space-y-1">
             {NAV.map(({ id, label, icon:Icon }) => (
               <button key={id} onClick={() => setActiveSection(id)}
                 className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all text-left"
@@ -341,7 +347,7 @@ export default function Settings() {
                 <h2 className="text-base font-semibold mb-1" style={{ color:'var(--on-surface)' }}>Appearance</h2>
                 <p className="text-sm mb-5" style={{ color:'var(--on-surface-variant)' }}>Choose your preferred color scheme</p>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {[
                     { id:'light', label:'Light Mode', desc:'Clean and bright interface', icon:Sun, color:'#d4932a',
                       preview: { bg:'#f7f9fc', card:'#ffffff', text:'#191c1e', accent:'#2ab5a0' } },

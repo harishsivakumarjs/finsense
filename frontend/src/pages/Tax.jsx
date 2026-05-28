@@ -50,11 +50,12 @@ export default function Tax() {
         api.get('/tax/carryforward'),
         api.get('/tax/suggestions'),
       ])
+      console.log("API response tax:", taxR.data, "deductions:", dedR.data)
       setTaxData(taxR.data)
-      setDeductions(dedR.data)
-      setAdvance(advR.data)
-      setCarryforward(cfR.data)
-      setSuggestions(sugR.data)
+      setDeductions(Array.isArray(dedR.data) ? dedR.data : [])
+      setAdvance(Array.isArray(advR.data) ? advR.data : [])
+      setCarryforward(Array.isArray(cfR.data) ? cfR.data : [])
+      setSuggestions(Array.isArray(sugR.data) ? sugR.data : [])
     } catch { toast.error('Failed to load tax data') }
     finally { setLoading(false) }
   }
@@ -85,9 +86,9 @@ export default function Tax() {
   deductions.forEach(d => { usedBySection[d.section] = (usedBySection[d.section]||0) + parseFloat(d.amount) })
 
   return (
-    <div className="p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
+    <div className="p-4 md:p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color:'var(--on-surface)' }}>Tax Planner</h1>
           <p className="text-sm mt-0.5" style={{ color:'var(--on-surface-variant)' }}>
@@ -149,7 +150,7 @@ export default function Tax() {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label:'Estimated Tax Due', val:formatINR(t?.total_tax), color:'var(--error)', sub:`FY ${getFinancialYear()} (${regime.toUpperCase()})` },
           { label:'Tax Paid (Advance)', val:formatINR(totalPaid), color:'var(--positive)', sub:'Via advance tax' },
@@ -163,9 +164,9 @@ export default function Tax() {
         ))}
       </div>
 
-      <div className="grid grid-cols-12 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Left: Income by Head + Deductions — col-span-8 */}
-        <div className="col-span-8 space-y-5">
+        <div className="lg:col-span-8 space-y-5">
           <Card className="overflow-hidden">
             <div className="px-5 py-4" style={{ borderBottom:'1px solid var(--outline-variant)' }}>
               <h3 className="text-base font-semibold" style={{ color:'var(--on-surface)' }}>Income by Head</h3>
@@ -243,7 +244,7 @@ export default function Tax() {
         </div>
 
         {/* Right: Advance Tax + Suggestions + Carryforward — col-span-4 */}
-        <div className="col-span-4 space-y-5">
+        <div className="lg:col-span-4 space-y-5">
           <Card className="p-5">
             <h3 className="text-base font-semibold mb-4" style={{ color:'var(--on-surface)' }}>Advance Tax Calendar</h3>
             {loading ? <div className="space-y-3">{[...Array(4)].map((_,i)=><div key={i} className="h-14 shimmer rounded"/>)}</div> : (

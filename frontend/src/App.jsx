@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import useStore from './store/useStore'
@@ -27,16 +27,27 @@ import TopBar from './components/TopBar'
 
 function PrivateRoute({ children, title }) {
   const { token, sidebarCollapsed } = useStore()
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+
   if (!token) return <Navigate to="/login" replace />
-  const sideW = sidebarCollapsed ? 64 : 220
+
+  const sideW = isMobile ? 0 : (sidebarCollapsed ? 64 : 220)
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: 'var(--background)' }}>
-      <Sidebar />
+      <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
       <div
-        className="flex flex-col flex-1 overflow-hidden"
+        className="flex flex-col flex-1 overflow-hidden min-w-0"
         style={{ marginLeft: sideW, transition: 'margin-left 0.2s ease' }}
       >
-        <TopBar title={title} />
+        <TopBar title={title} onMenuClick={() => setMobileNavOpen(true)} />
         <main className="flex-1 overflow-y-auto">
           {children}
         </main>

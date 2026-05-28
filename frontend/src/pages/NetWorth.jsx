@@ -109,11 +109,12 @@ export default function NetWorth() {
         api.get('/loans'),
         api.get('/loans/cards'),
       ])
+      console.log("API response networth:", curR.data, "history:", histR.data)
       setCurrent(curR.data)
-      setHistory(histR.data)
-      setInvestments(invR.data)
-      setLoans(loanR.data)
-      setCards(cardR.data)
+      setHistory(Array.isArray(histR.data) ? histR.data : [])
+      setInvestments(Array.isArray(invR.data) ? invR.data : [])
+      setLoans(Array.isArray(loanR.data) ? loanR.data : [])
+      setCards(Array.isArray(cardR.data) ? cardR.data : [])
     } catch { toast.error('Failed to load net worth data') }
     finally { setLoading(false) }
   }
@@ -157,7 +158,7 @@ export default function NetWorth() {
   const allLiabilities = [...loanLiabilities, ...cardLiabilities].filter(l => l.value > 0)
 
   const chartData = histArr.map(h => ({
-    date: h.date || h.recorded_at?.split('T')[0],
+    date: h.snapshot_date || h.date || h.recorded_at?.split('T')[0],
     nw: parseFloat(h.net_worth||0),
   }))
 
@@ -165,9 +166,9 @@ export default function NetWorth() {
   const liabilityTotal = allLiabilities.reduce((s,l) => s+l.value, 0)
 
   return (
-    <div className="p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
+    <div className="p-4 md:p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color:'var(--on-surface-variant)' }}>Consolidated Overview</p>
           <h1 className="text-2xl font-bold" style={{ color:'var(--on-surface)' }}>Net Worth</h1>
@@ -185,7 +186,7 @@ export default function NetWorth() {
       </div>
 
       {/* Hero Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="p-5">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-semibold uppercase tracking-wider" style={{ color:'var(--on-surface-variant)' }}>Net Worth</p>
@@ -241,7 +242,7 @@ export default function NetWorth() {
         )}
       </Card>
 
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Assets Breakdown */}
         <Card className="overflow-hidden">
           <div className="px-5 py-4" style={{ borderBottom:'1px solid var(--outline-variant)' }}>
@@ -353,7 +354,7 @@ export default function NetWorth() {
             <Pencil size={12} /> Edit
           </button>
         </div>
-        <div className="grid grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {milestones.map(m => {
             const pct = Math.min((nw / m.target) * 100, 100)
             const achieved = nw >= m.target

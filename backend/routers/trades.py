@@ -132,22 +132,41 @@ def trade_analytics(
 
     if not trades:
         return {
-            "total_trades": 0, "win_rate": 0, "total_pnl": 0,
-            "avg_profit": 0, "avg_loss": 0, "best_trade": 0, "worst_trade": 0,
+            "total_trades": 0, "winning_trades": 0, "losing_trades": 0,
+            "win_rate": 0, "total_pnl": 0,
+            "avg_win": 0, "avg_loss": 0, "best_trade": 0, "worst_trade": 0,
+            "profit_factor": 0,
+            "by_type": {},
         }
 
     pnls = [float(t.net_pnl) for t in trades]
     wins = [p for p in pnls if p > 0]
     losses = [p for p in pnls if p < 0]
 
+    by_type: dict = {}
+    for t in trades:
+        tt = t.trade_type or "other"
+        if tt not in by_type:
+            by_type[tt] = {"pnl": 0.0, "count": 0}
+        by_type[tt]["pnl"] += float(t.net_pnl)
+        by_type[tt]["count"] += 1
+
+    gross_wins = sum(wins)
+    gross_losses = abs(sum(losses))
+    profit_factor = round(gross_wins / gross_losses, 2) if gross_losses > 0 else (999.0 if gross_wins > 0 else 0.0)
+
     return {
         "total_trades": len(trades),
+        "winning_trades": len(wins),
+        "losing_trades": len(losses),
         "win_rate": round(len(wins) / len(trades) * 100, 2) if trades else 0,
         "total_pnl": round(sum(pnls), 2),
-        "avg_profit": round(sum(wins) / len(wins), 2) if wins else 0,
+        "avg_win": round(sum(wins) / len(wins), 2) if wins else 0,
         "avg_loss": round(sum(losses) / len(losses), 2) if losses else 0,
         "best_trade": round(max(pnls), 2) if pnls else 0,
         "worst_trade": round(min(pnls), 2) if pnls else 0,
+        "profit_factor": profit_factor,
+        "by_type": by_type,
     }
 
 

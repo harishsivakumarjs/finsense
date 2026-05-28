@@ -132,9 +132,9 @@ export default function Simulator() {
   const forecastData = r?.forecast || []
 
   return (
-    <div className="p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
+    <div className="p-4 md:p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color:'var(--on-surface)' }}>Financial Simulator</h1>
           <p className="text-sm mt-0.5" style={{ color:'var(--on-surface-variant)' }}>Model scenarios and see live results</p>
@@ -145,9 +145,9 @@ export default function Simulator() {
         </button>
       </div>
 
-      <div className="grid grid-cols-11 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-11 gap-5">
         {/* Left: Sliders */}
-        <div className="col-span-6">
+        <div className="lg:col-span-6">
           <Card className="p-6">
             <div className="flex items-center gap-2 mb-5">
               <Sliders size={16} style={{ color:'var(--primary-container)' }} />
@@ -164,7 +164,7 @@ export default function Simulator() {
         </div>
 
         {/* Right: Live Results */}
-        <div className="col-span-5 space-y-4">
+        <div className="lg:col-span-5 space-y-4">
           {/* 2x2 Result Grid */}
           <div className="grid grid-cols-2 gap-3">
             {[
@@ -207,7 +207,7 @@ export default function Simulator() {
       </div>
 
       {/* Bottom row: Skip EMI Scenario | Loan Calculator */}
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Skip EMI Scenario */}
         <Card className="p-6">
           <h3 className="text-sm font-semibold uppercase tracking-wider mb-4" style={{ color:'var(--error)' }}>

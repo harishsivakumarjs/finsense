@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2, CreditCard, AlertTriangle } from 'lucide-react'
+import { Plus, Pencil, Trash2, CreditCard, AlertTriangle, CheckCircle2, History, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import api from '../api/axios'
@@ -24,7 +24,7 @@ const Card = ({ children, className = '', style = {} }) => (
 )
 
 export default function Debt() {
-  const { selectedFY } = useStore()
+  const { selectedFY, incrementDebtVersion } = useStore()
   const [loans, setLoans] = useState([])
   const [cards, setCards] = useState([])
   const [score, setScore] = useState(null)
@@ -34,11 +34,20 @@ export default function Debt() {
   const [showLoanModal, setShowLoanModal] = useState(false)
   const [editLoan, setEditLoan] = useState(null)
   const [loanForm, setLoanForm] = useState(BLANK_LOAN)
+  const [emiMode, setEmiMode] = useState(false)
   const [showCardModal, setShowCardModal] = useState(false)
   const [editCard, setEditCard] = useState(null)
   const [cardForm, setCardForm] = useState(BLANK_CARD)
   const [detailLoan, setDetailLoan] = useState(null)
   const [detailCard, setDetailCard] = useState(null)
+  const [payModal, setPayModal] = useState(null)
+  const [payAmount, setPayAmount] = useState('')
+  const [payDate, setPayDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [paying, setPaying] = useState(false)
+  const [showHistoryModal, setShowHistoryModal] = useState(false)
+  const [historyPayments, setHistoryPayments] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [itemHistory, setItemHistory] = useState(null)
 
   const load = async () => {
     setLoading(true)
@@ -50,10 +59,10 @@ export default function Debt() {
         api.get('/loans/forecast'),
         api.get('/loans/debtfree'),
       ])
-      setLoans(loansR.data)
-      setCards(cardsR.data)
+      setLoans(Array.isArray(loansR.data) ? loansR.data : [])
+      setCards(Array.isArray(cardsR.data) ? cardsR.data : [])
       setScore(scoreR.data)
-      setForecast(forecastR.data)
+      setForecast(Array.isArray(forecastR.data) ? forecastR.data : [])
       setDebtFree(dfR.data?.debt_free)
     } catch { toast.error('Failed to load debt data') }
     finally { setLoading(false) }
@@ -61,8 +70,10 @@ export default function Debt() {
 
   useEffect(() => { load() }, [selectedFY])
 
-  const openAddLoan = () => { setEditLoan(null); setLoanForm(BLANK_LOAN); setShowLoanModal(true) }
+  const openAddLoan = () => { setEmiMode(false); setEditLoan(null); setLoanForm(BLANK_LOAN); setShowLoanModal(true) }
+  const openAddEMI = () => { setEmiMode(true); setEditLoan(null); setLoanForm({ ...BLANK_LOAN, loan_type: 'emi' }); setShowLoanModal(true) }
   const openEditLoan = (loan) => {
+    setEmiMode(loan.loan_type === 'emi')
     setEditLoan(loan)
     setLoanForm({ loan_type: loan.loan_type, loan_name: loan.loan_name, bank_name: loan.bank_name || '', principal: loan.principal, emi_amount: loan.emi_amount, interest_rate: loan.interest_rate, start_date: loan.start_date, months_total: loan.months_total })
     setShowLoanModal(true)
@@ -78,7 +89,7 @@ export default function Debt() {
     if (!loanForm.loan_name || !loanForm.principal) return toast.error('Fill required fields')
     try {
       if (editLoan) { await api.put(`/loans/${editLoan.id}`, loanForm); toast.success('Updated') }
-      else { await api.post('/loans', loanForm); toast.success('Loan added') }
+      else { await api.post('/loans', loanForm); toast.success(emiMode ? 'EMI added' : 'Loan added') }
       setShowLoanModal(false); load()
     } catch { toast.error('Failed to save') }
   }
@@ -91,43 +102,168 @@ export default function Debt() {
     } catch { toast.error('Failed to save') }
   }
   const deleteLoan = async (id) => {
-    if (!confirm('Delete loan?')) return
-    try { await api.delete(`/loans/${id}`); toast.success('Deleted'); setShowLoanModal(false); load() }
+    if (!confirm('Delete this entry?')) return
+    try { await api.delete(`/loans/${id}`); toast.success('Deleted'); setShowLoanModal(false); setDetailLoan(null); load() }
     catch { toast.error('Failed') }
   }
   const deleteCard = async (id) => {
     if (!confirm('Delete card?')) return
-    try { await api.delete(`/loans/cards/${id}`); toast.success('Deleted'); setShowCardModal(false); load() }
+    try { await api.delete(`/loans/cards/${id}`); toast.success('Deleted'); setShowCardModal(false); setDetailCard(null); load() }
     catch { toast.error('Failed') }
   }
+
+  const openPayEMI = (loan, e) => {
+    e?.stopPropagation()
+    setPayAmount(String(loan.emi_amount))
+    setPayDate(new Date().toISOString().split('T')[0])
+    setPayModal({ type: 'emi', item: loan })
+    setDetailLoan(null)
+  }
+  const openPayCard = (card, e) => {
+    e?.stopPropagation()
+    setPayAmount(String(card.minimum_due))
+    setPayDate(new Date().toISOString().split('T')[0])
+    setPayModal({ type: 'card', item: card })
+    setDetailCard(null)
+  }
+
+  const handlePay = async () => {
+    const amount = parseFloat(payAmount)
+    if (!amount || amount <= 0) return toast.error('Enter a valid amount')
+    setPaying(true)
+    try {
+      const { type, item } = payModal
+      if (type === 'emi') {
+        await api.post(`/loans/${item.id}/pay`, { amount, paid_on: payDate, notes: `${item.loan_name} EMI` })
+      } else {
+        await api.post(`/loans/cards/${item.id}/pay`, { amount, paid_on: payDate, notes: `${item.card_name} Bill Payment` })
+      }
+      incrementDebtVersion()
+      toast.success(`Payment of ${formatINR(amount)} recorded!`)
+      setPayModal(null)
+      load()
+    } catch { toast.error('Payment failed') }
+    finally { setPaying(false) }
+  }
+
+  const openGlobalHistory = async () => {
+    setShowHistoryModal(true)
+    setHistoryLoading(true)
+    try {
+      const res = await api.get('/loans/payments')
+      setHistoryPayments(Array.isArray(res.data) ? res.data : [])
+    } catch { toast.error('Failed to load history') }
+    finally { setHistoryLoading(false) }
+  }
+
+  const openItemHistory = async (type, item) => {
+    setDetailLoan(null)
+    setDetailCard(null)
+    setItemHistory({ type, item, payments: null })
+    try {
+      const url = type === 'loan' ? `/loans/${item.id}/payments` : `/loans/cards/${item.id}/payments`
+      const res = await api.get(url)
+      setItemHistory({ type, item, payments: Array.isArray(res.data) ? res.data : [] })
+    } catch { toast.error('Failed to load history') }
+  }
+
   const s = score
   const scoreValue = s?.score || 0
   const scoreColor = scoreValue < 40 ? '#006b5d' : scoreValue < 70 ? '#d4932a' : '#ba1a1a'
   const scoreLabel = scoreValue < 40 ? 'Safe' : scoreValue < 70 ? 'Caution' : 'Danger'
 
   const getProgress = (loan) => {
+    if (loan.remaining_balance !== null && loan.remaining_balance !== undefined) {
+      const principal = parseFloat(loan.principal)
+      if (principal <= 0) return 0
+      return Math.min(((principal - parseFloat(loan.remaining_balance)) / principal) * 100, 100)
+    }
     const today = new Date()
     const start = new Date(loan.start_date)
     const elapsed = Math.floor((today - start) / (1000 * 60 * 60 * 24 * 30))
-    return Math.min((elapsed / loan.months_total) * 100, 100)
+    const totalPaid = Math.max(elapsed, parseInt(loan.paid_months || 0, 10))
+    return Math.min((totalPaid / loan.months_total) * 100, 100)
   }
 
-  const activeLoans = loans.filter(l => l.is_active)
-  const sortedByRate = [...activeLoans].sort((a, b) => parseFloat(b.interest_rate) - parseFloat(a.interest_rate))
-  const sortedByBalance = [...activeLoans].sort((a, b) => parseFloat(a.principal) - parseFloat(b.principal))
+  const getBalance = (loan) => {
+    if (loan.remaining_balance !== null && loan.remaining_balance !== undefined) {
+      return parseFloat(loan.remaining_balance)
+    }
+    return parseFloat(loan.principal) * (1 - getProgress(loan) / 100)
+  }
+
+  const activeLoans = loans.filter(l => l.is_active && l.loan_type !== 'emi')
+  const activeEMIs = loans.filter(l => l.is_active && l.loan_type === 'emi')
+
+  const loanMap = Object.fromEntries(loans.map(l => [String(l.id), l]))
+  const cardMap = Object.fromEntries(cards.map(c => [String(c.id), c]))
 
   const forecastData = Array.isArray(forecast) ? forecast : []
   const dtiColorFn = (val) => val < 40 ? '#006b5d' : val < 70 ? '#d4932a' : '#ba1a1a'
 
+  const renderLoanRow = (loan) => {
+    const prog = getProgress(loan)
+    const bal = getBalance(loan)
+    return (
+      <div key={loan.id} className="p-3 rounded-lg cursor-pointer transition-colors"
+        style={{ border: '1px solid var(--outline-variant)' }}
+        onClick={() => setDetailLoan(loan)}
+        onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--surface-container-low)'}
+        onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <p className="text-sm font-semibold" style={{ color: 'var(--on-surface)' }}>{loan.loan_name}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold capitalize" style={{ backgroundColor: 'rgba(74,142,212,0.12)', color: '#4a8ed4' }}>{loan.loan_type.replace('_',' ')}</span>
+              <span className="text-xs font-mono" style={{ color: '#4a8ed4' }}>{loan.interest_rate}% p.a.</span>
+              {loan.bank_name && <span className="text-xs" style={{ color: 'var(--on-surface-variant)' }}>{loan.bank_name}</span>}
+            </div>
+          </div>
+          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+            <div className="text-right mr-1">
+              <p className="text-sm font-mono font-semibold" style={{ color: '#d4932a' }}>EMI {formatINR(loan.emi_amount)}</p>
+              <p className="text-xs" style={{ color: 'var(--on-surface-variant)' }}>{loan.months_total} months</p>
+            </div>
+            <button onClick={e => openPayEMI(loan, e)} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold transition-colors"
+              style={{ backgroundColor: 'rgba(42,181,160,0.12)', color: '#2ab5a0' }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor='rgba(42,181,160,0.22)'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor='rgba(42,181,160,0.12)'}>
+              <CheckCircle2 size={11} /> Pay
+            </button>
+            <button onClick={() => openEditLoan(loan)} className="p-1.5 rounded-lg" style={{ color: 'var(--on-surface-variant)' }}
+              onMouseEnter={e => e.currentTarget.style.color='var(--primary-container)'}
+              onMouseLeave={e => e.currentTarget.style.color='var(--on-surface-variant)'}>
+              <Pencil size={12} />
+            </button>
+            <button onClick={() => deleteLoan(loan.id)} className="p-1.5 rounded-lg" style={{ color: 'var(--on-surface-variant)' }}
+              onMouseEnter={e => e.currentTarget.style.color='var(--error)'}
+              onMouseLeave={e => e.currentTarget.style.color='var(--on-surface-variant)'}>
+              <Trash2 size={12} />
+            </button>
+          </div>
+        </div>
+        <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-container)' }}>
+          <div className="h-full rounded-full" style={{ width: `${prog}%`, backgroundColor: '#4a8ed4' }} />
+        </div>
+        <p className="text-xs mt-1" style={{ color: 'var(--on-surface-variant)' }}>
+          {prog.toFixed(0)}% paid · Balance: <span className="font-mono">{formatINR(bal)}</span>
+        </p>
+      </div>
+    )
+  }
+
   return (
-    <div className="p-6 space-y-5" style={{ backgroundColor: 'var(--background)', minHeight: '100%' }}>
+    <div className="p-4 md:p-6 space-y-5" style={{ backgroundColor: 'var(--background)', minHeight: '100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--on-surface)' }}>Debt Manager</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--on-surface-variant)' }}>Track loans and credit cards</p>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--on-surface-variant)' }}>Track loans, EMIs and credit cards</p>
         </div>
         <div className="flex items-center gap-3">
+          <button onClick={openGlobalHistory} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold" style={{ backgroundColor: 'var(--surface)', color: 'var(--on-surface-variant)', border: '1px solid var(--outline-variant)' }}>
+            <History size={16} /> History
+          </button>
           <button onClick={openAddLoan} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold" style={{ backgroundColor: '#2ab5a0', color: 'white' }}>
             <Plus size={16} /> Add Loan
           </button>
@@ -183,7 +319,7 @@ export default function Debt() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Active Loans */}
         <Card className="p-5">
           <div className="flex items-center justify-between mb-4">
@@ -196,51 +332,7 @@ export default function Debt() {
           : activeLoans.length === 0 ? (
             <div className="py-10 text-center text-sm" style={{ color: 'var(--on-surface-variant)' }}>No active loans</div>
           ) : (
-            <div className="space-y-3">
-              {activeLoans.map(loan => {
-                const prog = getProgress(loan)
-                return (
-                  <div key={loan.id} className="p-3 rounded-lg cursor-pointer transition-colors"
-                    style={{ border: '1px solid var(--outline-variant)' }}
-                    onClick={() => setDetailLoan(loan)}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--surface-container-low)'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <p className="text-sm font-semibold" style={{ color: 'var(--on-surface)' }}>{loan.loan_name}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold capitalize" style={{ backgroundColor: 'rgba(74,142,212,0.12)', color: '#4a8ed4' }}>{loan.loan_type.replace('_',' ')}</span>
-                          <span className="text-xs font-mono" style={{ color: '#4a8ed4' }}>{loan.interest_rate}% p.a.</span>
-                          {loan.bank_name && <span className="text-xs" style={{ color: 'var(--on-surface-variant)' }}>{loan.bank_name}</span>}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2" onClick={e => { e.stopPropagation() }}>
-                        <div className="text-right mr-1">
-                          <p className="text-sm font-mono font-semibold" style={{ color: '#d4932a' }}>EMI {formatINR(loan.emi_amount)}</p>
-                          <p className="text-xs" style={{ color: 'var(--on-surface-variant)' }}>{loan.months_total} months</p>
-                        </div>
-                        <button onClick={() => openEditLoan(loan)} className="p-1.5 rounded-lg" style={{ color: 'var(--on-surface-variant)' }}
-                          onMouseEnter={e => e.currentTarget.style.color='var(--primary-container)'}
-                          onMouseLeave={e => e.currentTarget.style.color='var(--on-surface-variant)'}>
-                          <Pencil size={12} />
-                        </button>
-                        <button onClick={() => deleteLoan(loan.id)} className="p-1.5 rounded-lg" style={{ color: 'var(--on-surface-variant)' }}
-                          onMouseEnter={e => e.currentTarget.style.color='var(--error)'}
-                          onMouseLeave={e => e.currentTarget.style.color='var(--on-surface-variant)'}>
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-container)' }}>
-                      <div className="h-full rounded-full" style={{ width: `${prog}%`, backgroundColor: '#4a8ed4' }} />
-                    </div>
-                    <p className="text-xs mt-1" style={{ color: 'var(--on-surface-variant)' }}>
-                      {prog.toFixed(0)}% paid · Balance: <span className="font-mono">{formatINR(parseFloat(loan.principal) * (1 - prog/100))}</span>
-                    </p>
-                  </div>
-                )
-              })}
-            </div>
+            <div className="space-y-3">{activeLoans.map(loan => renderLoanRow(loan))}</div>
           )}
         </Card>
 
@@ -266,7 +358,6 @@ export default function Debt() {
                     onClick={() => setDetailCard(card)}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        {/* SVG ring */}
                         <svg width="52" height="52" viewBox="0 0 52 52">
                           <circle cx="26" cy="26" r="20" fill="none" stroke="var(--surface-container)" strokeWidth="5" />
                           <circle cx="26" cy="26" r="20" fill="none" stroke={utilColor} strokeWidth="5"
@@ -281,6 +372,12 @@ export default function Debt() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                        <button onClick={e => openPayCard(card, e)} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold transition-colors"
+                          style={{ backgroundColor: 'rgba(42,181,160,0.12)', color: '#2ab5a0' }}
+                          onMouseEnter={e => e.currentTarget.style.backgroundColor='rgba(42,181,160,0.22)'}
+                          onMouseLeave={e => e.currentTarget.style.backgroundColor='rgba(42,181,160,0.12)'}>
+                          <CheckCircle2 size={11} /> Pay
+                        </button>
                         <button onClick={() => openEditCard(card)} className="p-1.5 rounded-lg" style={{ color: 'var(--on-surface-variant)' }}
                           onMouseEnter={e => e.currentTarget.style.color='var(--primary-container)'}
                           onMouseLeave={e => e.currentTarget.style.color='var(--on-surface-variant)'}>
@@ -306,6 +403,25 @@ export default function Debt() {
         </Card>
       </div>
 
+      {/* EMI Tracker */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-base font-semibold" style={{ color: 'var(--on-surface)' }}>EMI Tracker</h3>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--on-surface-variant)' }}>Device purchases, BNPL, installment plans</p>
+          </div>
+          <button onClick={openAddEMI} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium" style={{ backgroundColor: 'var(--primary-container)', color: 'white' }}>
+            <Plus size={12} /> Add EMI
+          </button>
+        </div>
+        {loading ? <div className="space-y-3">{[...Array(2)].map((_,i)=><div key={i} className="h-16 shimmer rounded"/>)}</div>
+        : activeEMIs.length === 0 ? (
+          <div className="py-8 text-center text-sm" style={{ color: 'var(--on-surface-variant)' }}>No active EMIs — add a device, BNPL or installment plan</div>
+        ) : (
+          <div className="space-y-3">{activeEMIs.map(loan => renderLoanRow(loan))}</div>
+        )}
+      </Card>
+
       {/* 6-Month DTI Forecast */}
       {forecastData.length > 0 && (
         <Card className="p-5">
@@ -326,6 +442,7 @@ export default function Debt() {
         </Card>
       )}
 
+      {/* Loan Detail Modal */}
       <DetailModal
         isOpen={!!detailLoan}
         onClose={() => setDetailLoan(null)}
@@ -341,10 +458,19 @@ export default function Debt() {
           { label: 'Interest Rate', value: `${detailLoan.interest_rate}% p.a.` },
           { label: 'Tenure', value: `${detailLoan.months_total} months` },
           { label: 'Start Date', value: formatDate(detailLoan.start_date) },
-          { label: 'Balance (est.)', value: formatINR(parseFloat(detailLoan.principal) * (1 - getProgress(detailLoan) / 100)), valueStyle: { fontFamily: 'monospace' } },
+          { label: 'Progress', value: `${getProgress(detailLoan).toFixed(0)}% paid` },
+          { label: 'Remaining Balance', value: formatINR(getBalance(detailLoan)), valueStyle: { fontFamily: 'monospace', color: 'var(--error)' } },
+          { label: 'Last Paid', value: detailLoan.last_paid_date ? formatDate(detailLoan.last_paid_date) : '—' },
+        ] : []}
+        actions={detailLoan ? [
+          { label: 'Pay EMI', icon: <CheckCircle2 size={15} />, onClick: () => openPayEMI(detailLoan), bg: 'rgba(42,181,160,0.12)', color: '#2ab5a0', border: '1px solid rgba(42,181,160,0.3)' },
+          { label: 'History', icon: <History size={15} />, onClick: () => openItemHistory('loan', detailLoan), bg: 'var(--surface-container-low)', color: 'var(--on-surface-variant)', border: '1px solid var(--outline-variant)' },
+          { label: 'Edit', icon: <Pencil size={15} />, onClick: () => { setDetailLoan(null); openEditLoan(detailLoan) }, bg: 'var(--surface-container-low)', color: 'var(--on-surface-variant)', border: '1px solid var(--outline-variant)' },
+          { label: 'Delete', icon: <Trash2 size={15} />, onClick: () => { if (!confirm('Delete loan?')) return; api.delete(`/loans/${detailLoan.id}`).then(() => { toast.success('Deleted'); setDetailLoan(null); load() }).catch(() => toast.error('Failed')) }, bg: 'rgba(186,26,26,0.08)', color: 'var(--error)' },
         ] : []}
       />
 
+      {/* Card Detail Modal */}
       <DetailModal
         isOpen={!!detailCard}
         onClose={() => setDetailCard(null)}
@@ -359,19 +485,27 @@ export default function Debt() {
           { label: 'Minimum Due', value: formatINR(detailCard.minimum_due), valueStyle: { fontFamily: 'monospace', color: '#d4932a' } },
           { label: 'Utilization', value: `${detailCard.credit_limit > 0 ? ((parseFloat(detailCard.outstanding) / parseFloat(detailCard.credit_limit)) * 100).toFixed(1) : 0}%` },
           { label: 'Due Date', value: detailCard.due_date ? `Day ${detailCard.due_date} of month` : '—' },
+          { label: 'Statement Date', value: detailCard.statement_date ? `Day ${detailCard.statement_date} of month` : '—' },
+          { label: 'Last Paid', value: detailCard.last_paid_date ? formatDate(detailCard.last_paid_date) : '—' },
+        ] : []}
+        actions={detailCard ? [
+          { label: 'Pay Bill', icon: <CheckCircle2 size={15} />, onClick: () => openPayCard(detailCard), bg: 'rgba(42,181,160,0.12)', color: '#2ab5a0', border: '1px solid rgba(42,181,160,0.3)' },
+          { label: 'History', icon: <History size={15} />, onClick: () => openItemHistory('card', detailCard), bg: 'var(--surface-container-low)', color: 'var(--on-surface-variant)', border: '1px solid var(--outline-variant)' },
+          { label: 'Edit', icon: <Pencil size={15} />, onClick: () => { setDetailCard(null); openEditCard(detailCard) }, bg: 'var(--surface-container-low)', color: 'var(--on-surface-variant)', border: '1px solid var(--outline-variant)' },
+          { label: 'Delete', icon: <Trash2 size={15} />, onClick: () => { if (!confirm('Delete card?')) return; api.delete(`/loans/cards/${detailCard.id}`).then(() => { toast.success('Deleted'); setDetailCard(null); load() }).catch(() => toast.error('Failed')) }, bg: 'rgba(186,26,26,0.08)', color: 'var(--error)' },
         ] : []}
       />
 
-      {/* Add Loan Modal */}
-      <Modal isOpen={showLoanModal} onClose={() => setShowLoanModal(false)} title={editLoan ? 'Edit Loan' : 'Add Loan'}>
+      {/* Add/Edit Loan Modal */}
+      <Modal isOpen={showLoanModal} onClose={() => setShowLoanModal(false)} title={editLoan ? (emiMode ? 'Edit EMI' : 'Edit Loan') : (emiMode ? 'Add EMI' : 'Add Loan')}>
         <div className="space-y-4">
           {[
-            { label: 'Loan Name', key: 'loan_name', type: 'text', placeholder: 'Home Loan' },
-            { label: 'Bank/Lender', key: 'bank_name', type: 'text', placeholder: 'HDFC Bank' },
-            { label: 'Principal (₹)', key: 'principal', type: 'number', placeholder: '500000' },
-            { label: 'EMI Amount (₹)', key: 'emi_amount', type: 'number', placeholder: '15000' },
-            { label: 'Interest Rate (%)', key: 'interest_rate', type: 'number', placeholder: '8.5' },
-            { label: 'Tenure (months)', key: 'months_total', type: 'number', placeholder: '60' },
+            { label: emiMode ? 'Item Name' : 'Loan Name', key: 'loan_name', type: 'text', placeholder: emiMode ? 'iPhone 15 Pro EMI' : 'Home Loan' },
+            { label: emiMode ? 'Provider / Lender' : 'Bank/Lender', key: 'bank_name', type: 'text', placeholder: emiMode ? 'Bajaj Finserv' : 'HDFC Bank' },
+            { label: 'Total Amount (₹)', key: 'principal', type: 'number', placeholder: emiMode ? '120000' : '500000' },
+            { label: 'Monthly Installment (₹)', key: 'emi_amount', type: 'number', placeholder: emiMode ? '10000' : '15000' },
+            { label: 'Interest Rate (%)', key: 'interest_rate', type: 'number', placeholder: emiMode ? '0' : '8.5' },
+            { label: 'Tenure (months)', key: 'months_total', type: 'number', placeholder: emiMode ? '12' : '60' },
           ].map(({ label, key, type, placeholder }) => (
             <div key={key}>
               <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--on-surface-variant)' }}>{label}</p>
@@ -380,14 +514,16 @@ export default function Debt() {
                 style={{ backgroundColor: 'var(--surface-container-low)', borderColor: 'var(--outline-variant)', color: 'var(--on-surface)' }} />
             </div>
           ))}
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--on-surface-variant)' }}>Loan Type</p>
-            <select value={loanForm.loan_type} onChange={e => setLoanForm(p => ({ ...p, loan_type: e.target.value }))}
-              className="w-full px-4 py-3 rounded-lg text-sm focus:outline-none border"
-              style={{ backgroundColor: 'var(--surface-container-low)', borderColor: 'var(--outline-variant)', color: 'var(--on-surface)' }}>
-              {['personal','home','car','education','gold','other'].map(t => <option key={t} value={t}>{t.replace(/^\w/,c=>c.toUpperCase())}</option>)}
-            </select>
-          </div>
+          {!emiMode && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--on-surface-variant)' }}>Loan Type</p>
+              <select value={loanForm.loan_type} onChange={e => setLoanForm(p => ({ ...p, loan_type: e.target.value }))}
+                className="w-full px-4 py-3 rounded-lg text-sm focus:outline-none border"
+                style={{ backgroundColor: 'var(--surface-container-low)', borderColor: 'var(--outline-variant)', color: 'var(--on-surface)' }}>
+                {['personal','home','car','education','other'].map(t => <option key={t} value={t}>{t.replace(/^\w/,c=>c.toUpperCase())}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--on-surface-variant)' }}>Start Date</p>
             <DatePickerInput value={loanForm.start_date} onChange={v => setLoanForm(p => ({ ...p, start_date: v }))} />
@@ -395,7 +531,49 @@ export default function Debt() {
           <div className="flex gap-3 pt-2">
             {editLoan && <button onClick={() => deleteLoan(editLoan.id)} className="px-5 py-3 rounded-lg text-sm font-medium" style={{ color: 'var(--error)', border: '1px solid var(--error)', backgroundColor: 'var(--error-container)' }}>Delete</button>}
             <button onClick={() => setShowLoanModal(false)} className="flex-1 py-3 rounded-lg text-sm font-medium border" style={{ borderColor: 'var(--outline-variant)', color: 'var(--on-surface-variant)' }}>Cancel</button>
-            <button onClick={saveLoan} className="flex-1 py-3 rounded-lg text-sm font-semibold" style={{ backgroundColor: '#2ab5a0', color: 'white' }}>{editLoan ? 'Save' : 'Add Loan'}</button>
+            <button onClick={saveLoan} className="flex-1 py-3 rounded-lg text-sm font-semibold" style={{ backgroundColor: '#2ab5a0', color: 'white' }}>{editLoan ? 'Save' : (emiMode ? 'Add EMI' : 'Add Loan')}</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Pay Modal */}
+      <Modal isOpen={!!payModal} onClose={() => setPayModal(null)}
+        title={payModal?.type === 'emi' ? `Pay EMI — ${payModal?.item?.loan_name}` : `Pay Bill — ${payModal?.item?.card_name}`}>
+        <div className="space-y-4">
+          {payModal?.type === 'card' && (
+            <div className="flex gap-2">
+              <button onClick={() => setPayAmount(String(payModal.item.minimum_due))}
+                className="flex-1 py-2 rounded-lg text-xs font-semibold border transition-colors"
+                style={{ borderColor: 'var(--outline-variant)', color: 'var(--on-surface-variant)', backgroundColor: 'var(--surface-container-low)' }}>
+                Min Due: {formatINR(payModal.item.minimum_due)}
+              </button>
+              <button onClick={() => setPayAmount(String(payModal.item.outstanding))}
+                className="flex-1 py-2 rounded-lg text-xs font-semibold border transition-colors"
+                style={{ borderColor: 'var(--outline-variant)', color: 'var(--on-surface-variant)', backgroundColor: 'var(--surface-container-low)' }}>
+                Full: {formatINR(payModal.item.outstanding)}
+              </button>
+            </div>
+          )}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--on-surface-variant)' }}>Amount (₹)</p>
+            <input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)}
+              className="w-full px-4 py-3 rounded-lg text-sm focus:outline-none border"
+              style={{ backgroundColor: 'var(--surface-container-low)', borderColor: 'var(--outline-variant)', color: 'var(--on-surface)' }} />
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--on-surface-variant)' }}>Payment Date</p>
+            <DatePickerInput value={payDate} onChange={setPayDate} />
+          </div>
+          <p className="text-xs" style={{ color: 'var(--on-surface-variant)' }}>
+            This will log an expense under Bills and update the remaining balance.
+          </p>
+          <div className="flex gap-3 pt-1">
+            <button onClick={() => setPayModal(null)} className="flex-1 py-3 rounded-lg text-sm font-medium border" style={{ borderColor: 'var(--outline-variant)', color: 'var(--on-surface-variant)' }}>Cancel</button>
+            <button onClick={handlePay} disabled={paying} className="flex-1 py-3 rounded-lg text-sm font-semibold flex items-center justify-center gap-2"
+              style={{ backgroundColor: '#2ab5a0', color: 'white', opacity: paying ? 0.7 : 1 }}>
+              <CheckCircle2 size={15} />
+              {paying ? 'Processing…' : 'Confirm Payment'}
+            </button>
           </div>
         </div>
       </Modal>
@@ -410,6 +588,7 @@ export default function Debt() {
             { label: 'Outstanding (₹)', key: 'outstanding', placeholder: '25000' },
             { label: 'Minimum Due (₹)', key: 'minimum_due', placeholder: '1250' },
             { label: 'Due Date (day of month)', key: 'due_date', placeholder: '15' },
+            { label: 'Statement Date (day of month)', key: 'statement_date', placeholder: '5' },
           ].map(({ label, key, placeholder }) => (
             <div key={key}>
               <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--on-surface-variant)' }}>{label}</p>
@@ -423,6 +602,91 @@ export default function Debt() {
             {editCard && <button onClick={() => deleteCard(editCard.id)} className="px-5 py-3 rounded-lg text-sm font-medium" style={{ color: 'var(--error)', border: '1px solid var(--error)', backgroundColor: 'var(--error-container)' }}>Delete</button>}
             <button onClick={() => setShowCardModal(false)} className="flex-1 py-3 rounded-lg text-sm font-medium border" style={{ borderColor: 'var(--outline-variant)', color: 'var(--on-surface-variant)' }}>Cancel</button>
             <button onClick={saveCard} className="flex-1 py-3 rounded-lg text-sm font-semibold" style={{ backgroundColor: '#2ab5a0', color: 'white' }}>{editCard ? 'Save' : 'Add Card'}</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Global History Modal */}
+      <Modal isOpen={showHistoryModal} onClose={() => setShowHistoryModal(false)} title="All Payment History">
+        <div className="space-y-3">
+          {historyLoading ? (
+            <div className="space-y-2">{[...Array(5)].map((_,i)=><div key={i} className="h-12 shimmer rounded"/>)}</div>
+          ) : historyPayments.length === 0 ? (
+            <div className="py-12 text-center text-sm" style={{ color: 'var(--on-surface-variant)' }}>No payment history yet</div>
+          ) : (
+            <>
+              <div className="grid grid-cols-4 gap-2 px-3 pb-1 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--on-surface-variant)' }}>
+                <span>Date</span><span>Source</span><span className="text-right">Amount</span><span className="text-right">Balance</span>
+              </div>
+              <div className="space-y-1 max-h-96 overflow-y-auto">
+                {historyPayments.map(p => {
+                  const source = p.loan_id ? (loanMap[p.loan_id]?.loan_name || 'Loan') : (cardMap[p.card_id]?.card_name || 'Card')
+                  const sourceColor = p.loan_id ? '#4a8ed4' : '#8b7fd4'
+                  return (
+                    <div key={p.id} className="grid grid-cols-4 gap-2 px-3 py-2.5 rounded-lg text-sm" style={{ backgroundColor: 'var(--surface-container-low)' }}>
+                      <span className="text-xs" style={{ color: 'var(--on-surface-variant)' }}>{formatDate(p.paid_on)}</span>
+                      <span className="text-xs font-medium truncate" style={{ color: sourceColor }}>{source}</span>
+                      <span className="text-xs font-mono text-right font-semibold" style={{ color: '#2ab5a0' }}>{formatINR(p.amount_paid)}</span>
+                      <span className="text-xs font-mono text-right" style={{ color: 'var(--on-surface-variant)' }}>{formatINR(p.remaining_balance)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+          <div className="pt-2">
+            <button onClick={() => setShowHistoryModal(false)} className="w-full py-3 rounded-lg text-sm font-medium border" style={{ borderColor: 'var(--outline-variant)', color: 'var(--on-surface-variant)' }}>Close</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Per-item History Modal */}
+      <Modal
+        isOpen={!!itemHistory}
+        onClose={() => setItemHistory(null)}
+        title={itemHistory ? `${itemHistory.type === 'loan' ? itemHistory.item.loan_name : itemHistory.item.card_name} — History` : ''}>
+        <div className="space-y-3">
+          {itemHistory && (
+            <div className="p-3 rounded-lg text-xs space-y-1" style={{ backgroundColor: 'var(--surface-container-low)' }}>
+              {itemHistory.type === 'loan' ? (
+                <>
+                  <div className="flex justify-between"><span style={{ color: 'var(--on-surface-variant)' }}>Principal</span><span className="font-mono font-semibold">{formatINR(itemHistory.item.principal)}</span></div>
+                  <div className="flex justify-between"><span style={{ color: 'var(--on-surface-variant)' }}>Remaining Balance</span><span className="font-mono font-semibold" style={{ color: 'var(--error)' }}>{formatINR(getBalance(itemHistory.item))}</span></div>
+                  <div className="flex justify-between"><span style={{ color: 'var(--on-surface-variant)' }}>Progress</span><span className="font-mono">{getProgress(itemHistory.item).toFixed(0)}% paid</span></div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between"><span style={{ color: 'var(--on-surface-variant)' }}>Credit Limit</span><span className="font-mono font-semibold">{formatINR(itemHistory.item.credit_limit)}</span></div>
+                  <div className="flex justify-between"><span style={{ color: 'var(--on-surface-variant)' }}>Outstanding</span><span className="font-mono font-semibold" style={{ color: 'var(--error)' }}>{formatINR(itemHistory.item.outstanding)}</span></div>
+                </>
+              )}
+            </div>
+          )}
+          {!itemHistory?.payments ? (
+            <div className="space-y-2">{[...Array(3)].map((_,i)=><div key={i} className="h-12 shimmer rounded"/>)}</div>
+          ) : itemHistory.payments.length === 0 ? (
+            <div className="py-10 text-center text-sm" style={{ color: 'var(--on-surface-variant)' }}>No payments recorded yet</div>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-2 px-3 pb-1 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--on-surface-variant)' }}>
+                <span>Date</span><span className="text-right">Paid</span><span className="text-right">Remaining</span>
+              </div>
+              <div className="space-y-1 max-h-72 overflow-y-auto">
+                {itemHistory.payments.map(p => (
+                  <div key={p.id} className="grid grid-cols-3 gap-2 px-3 py-2.5 rounded-lg text-sm" style={{ backgroundColor: 'var(--surface-container-low)' }}>
+                    <div>
+                      <p className="text-xs" style={{ color: 'var(--on-surface)' }}>{formatDate(p.paid_on)}</p>
+                      {p.notes && <p className="text-xs truncate" style={{ color: 'var(--on-surface-variant)' }}>{p.notes}</p>}
+                    </div>
+                    <span className="text-xs font-mono text-right font-semibold" style={{ color: '#2ab5a0' }}>{formatINR(p.amount_paid)}</span>
+                    <span className="text-xs font-mono text-right" style={{ color: 'var(--on-surface-variant)' }}>{formatINR(p.remaining_balance)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          <div className="pt-1">
+            <button onClick={() => setItemHistory(null)} className="w-full py-3 rounded-lg text-sm font-medium border" style={{ borderColor: 'var(--outline-variant)', color: 'var(--on-surface-variant)' }}>Close</button>
           </div>
         </div>
       </Modal>

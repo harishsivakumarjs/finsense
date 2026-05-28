@@ -133,6 +133,8 @@ def update_profile(
 ):
     if payload.mobile is not None:
         current_user.mobile = payload.mobile
+    if payload.photo is not None:
+        current_user.photo = payload.photo
     db.commit()
     db.refresh(current_user)
     return UserOut.model_validate(current_user)

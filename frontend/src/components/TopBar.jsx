@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Bell, Search, Moon, Sun, X, TrendingUp, AlertCircle, Calendar, AlertTriangle } from 'lucide-react'
+import { Bell, Search, Moon, Sun, X, TrendingUp, AlertCircle, Calendar, AlertTriangle, Menu } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import api from '../api/axios'
@@ -105,7 +105,7 @@ const TYPE_META = {
   Friend:     { color: '#8b7fd4', bg: 'rgba(139,127,212,0.1)' },
 }
 
-export default function TopBar({ title }) {
+export default function TopBar({ title, onMenuClick }) {
   const { theme, setTheme } = useStore()
   const navigate = useNavigate()
   const { notifs, setNotifs, unread, setUnread, generate } = useNotifications()
@@ -120,7 +120,6 @@ export default function TopBar({ title }) {
   const bellRef = useRef(null)
   const searchRef = useRef(null)
 
-  // Load notifications on mount so the red dot appears immediately
   useEffect(() => { generate() }, [])
 
   useEffect(() => {
@@ -172,7 +171,7 @@ export default function TopBar({ title }) {
 
   return (
     <div
-      className="flex items-center justify-between px-6 z-30 flex-shrink-0"
+      className="flex items-center px-3 md:px-6 z-30 flex-shrink-0 gap-2 md:gap-3"
       style={{
         backgroundColor: 'var(--surface)',
         borderBottom: '1px solid var(--outline-variant)',
@@ -180,13 +179,25 @@ export default function TopBar({ title }) {
         boxShadow: 'var(--shadow-card)',
       }}
     >
-      <h1 className="text-lg font-semibold" style={{ color: 'var(--on-surface)', fontFamily: 'var(--font-body)' }}>
+      {/* Hamburger — mobile only */}
+      <button
+        onClick={onMenuClick}
+        className="p-2 rounded-lg flex-shrink-0 md:hidden"
+        style={{ color: 'var(--on-surface-variant)' }}
+        onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--surface-container-low)'; e.currentTarget.style.color = 'var(--on-surface)' }}
+        onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--on-surface-variant)' }}
+      >
+        <Menu size={20} />
+      </button>
+
+      {/* Page title */}
+      <h1 className="text-base md:text-lg font-semibold flex-1 truncate min-w-0" style={{ color: 'var(--on-surface)', fontFamily: 'var(--font-body)' }}>
         {title}
       </h1>
 
-      <div className="flex items-center gap-2">
-        {/* Search */}
-        <div className="relative" ref={searchRef}>
+      <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
+        {/* Search — hidden on small mobile */}
+        <div className="relative hidden sm:block" ref={searchRef}>
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--on-surface-variant)' }} />
           <input
             type="text"
@@ -200,7 +211,7 @@ export default function TopBar({ title }) {
             }}
             className="pl-9 pr-4 py-2 rounded-lg text-sm focus:outline-none transition-all"
             style={{
-              width: searchFocused ? 280 : 220,
+              width: searchFocused ? 240 : 200,
               backgroundColor: 'var(--surface-container-low)',
               border: `1px solid ${searchFocused ? 'var(--primary-container)' : 'var(--outline-variant)'}`,
               color: 'var(--on-surface)',
@@ -210,7 +221,7 @@ export default function TopBar({ title }) {
           />
           {showSearch && (
             <div className="absolute top-full mt-2 right-0 rounded-xl border z-50 overflow-hidden"
-              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--outline-variant)', boxShadow: 'var(--shadow-md)', minWidth: 300 }}>
+              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--outline-variant)', boxShadow: 'var(--shadow-md)', width: 'min(300px, calc(100vw - 2rem))' }}>
               {searching ? (
                 <div className="px-4 py-5 text-sm text-center" style={{ color: 'var(--on-surface-variant)' }}>Searching…</div>
               ) : searchResults.length === 0 ? (
@@ -265,8 +276,11 @@ export default function TopBar({ title }) {
           </button>
 
           {showBell && (
-            <div className="absolute right-0 top-full mt-2 w-96 rounded-xl border z-50 overflow-hidden"
-              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--outline-variant)', boxShadow: 'var(--shadow-md)' }}>
+            <div
+              data-bell-dropdown
+              className="absolute right-0 top-full mt-2 rounded-xl border z-50 overflow-hidden"
+              style={{ width: 'min(24rem, calc(100vw - 1rem))', backgroundColor: 'var(--surface)', borderColor: 'var(--outline-variant)', boxShadow: 'var(--shadow-md)' }}
+            >
               <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--outline-variant)' }}>
                 <span className="text-sm font-semibold" style={{ color: 'var(--on-surface)' }}>Notifications</span>
                 <div className="flex items-center gap-2">
@@ -320,7 +334,6 @@ export default function TopBar({ title }) {
         >
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
-
       </div>
     </div>
   )

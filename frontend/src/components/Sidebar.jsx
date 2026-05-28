@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Wallet, Receipt, CreditCard, TrendingUp, PieChart,
   Youtube, FileText, BarChart3, Users, Calculator, LogOut, ChevronLeft,
-  ChevronRight, Shield, Settings, Moon, Sun, ClipboardList,
+  ChevronRight, Shield, Settings, Moon, Sun, ClipboardList, X,
 } from 'lucide-react'
 import useStore from '../store/useStore'
 import toast from 'react-hot-toast'
@@ -82,16 +82,31 @@ function SettingsModal({ isOpen, onClose }) {
 }
 
 /* ── Sidebar ── */
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false, onMobileClose = () => {} }) {
   const { user, logout, sidebarCollapsed, setSidebarCollapsed, theme, setTheme, avatar } = useStore()
   const navigate = useNavigate()
 
   const [showProfile, setShowProfile] = useState(false)
   const [profilePos, setProfilePos] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
 
   const userRef = useRef(null)
   const dropRef = useRef(null)
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+
+  // Close mobile sidebar when escape pressed
+  useEffect(() => {
+    if (!mobileOpen) return
+    const onKey = (e) => { if (e.key === 'Escape') onMobileClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [mobileOpen])
 
   // Click-outside + Escape to close profile dropdown
   useEffect(() => {
@@ -130,11 +145,11 @@ export default function Sidebar() {
     ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
     : 'U'
 
-  const w = sidebarCollapsed ? 64 : 220
+  const isCollapsed = !isMobile && sidebarCollapsed
+  const w = isMobile ? 220 : (sidebarCollapsed ? 64 : 220)
 
-  // Position dropdown: to the right when collapsed, above when expanded
   const dropStyle = profilePos
-    ? sidebarCollapsed
+    ? isCollapsed
       ? {
           position: 'fixed',
           top: Math.max(8, Math.min(profilePos.top, window.innerHeight - 300)),
@@ -153,33 +168,43 @@ export default function Sidebar() {
 
   return (
     <>
+      {/* Mobile backdrop overlay */}
+      {isMobile && mobileOpen && (
+        <div
+          className="fixed inset-0 z-30"
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}
+          onClick={onMobileClose}
+        />
+      )}
+
       <div
-        className="fixed left-0 top-0 h-full flex flex-col z-40 sidebar-transition overflow-hidden"
+        className="fixed left-0 top-0 h-full flex flex-col z-40 overflow-hidden"
         style={{
           width: w,
           backgroundColor: '#0B1426',
           borderRight: '1px solid rgba(255,255,255,0.06)',
+          transform: isMobile ? (mobileOpen ? 'translateX(0)' : 'translateX(-100%)') : 'translateX(0)',
+          transition: 'transform 0.25s ease, width 0.2s ease',
         }}
       >
-        {/* Header: Logo + collapse toggle */}
+        {/* Header: Logo + toggle */}
         <div
           className="flex items-center flex-shrink-0"
           style={{
             borderBottom: '1px solid rgba(255,255,255,0.06)',
             height: 64,
-            padding: sidebarCollapsed ? '0 12px' : '0 16px',
-            justifyContent: sidebarCollapsed ? 'center' : 'space-between',
+            padding: isCollapsed ? '0 12px' : '0 16px',
+            justifyContent: isCollapsed ? 'center' : 'space-between',
           }}
         >
           <div className="flex items-center gap-2.5 overflow-hidden">
-            {/* Teal square logo */}
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0"
               style={{ backgroundColor: '#2AB5A0', color: '#ffffff' }}
             >
               F
             </div>
-            {!sidebarCollapsed && (
+            {!isCollapsed && (
               <span
                 className="whitespace-nowrap"
                 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, color: '#ffffff' }}
@@ -188,7 +213,9 @@ export default function Sidebar() {
               </span>
             )}
           </div>
-          {!sidebarCollapsed && (
+
+          {/* Desktop collapse button */}
+          {!isMobile && !sidebarCollapsed && (
             <button
               onClick={() => setSidebarCollapsed(true)}
               className="p-1 rounded-lg transition-colors flex-shrink-0"
@@ -200,10 +227,23 @@ export default function Sidebar() {
               <ChevronLeft size={15} />
             </button>
           )}
+
+          {/* Mobile close button */}
+          {isMobile && (
+            <button
+              onClick={onMobileClose}
+              className="p-1 rounded-lg transition-colors flex-shrink-0"
+              style={{ color: '#8BA8C8' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#ffffff'}
+              onMouseLeave={e => e.currentTarget.style.color = '#8BA8C8'}
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
 
-        {/* Expand button when collapsed */}
-        {sidebarCollapsed && (
+        {/* Expand button when desktop collapsed */}
+        {isCollapsed && (
           <button
             onClick={() => setSidebarCollapsed(false)}
             className="flex items-center justify-center py-2 transition-colors flex-shrink-0"
@@ -217,18 +257,19 @@ export default function Sidebar() {
         )}
 
         {/* Nav items */}
-        <nav className="flex-1 overflow-y-auto" style={{ padding: sidebarCollapsed ? '6px 6px' : '6px 8px' }}>
+        <nav className="flex-1 overflow-y-auto" style={{ padding: isCollapsed ? '6px 6px' : '6px 8px' }}>
           <ul className="space-y-0.5">
             {NAV_ITEMS.map(({ path, label, icon: Icon }) => (
               <li key={path}>
                 <NavLink
                   to={path}
-                  title={sidebarCollapsed ? label : undefined}
+                  onClick={isMobile ? onMobileClose : undefined}
+                  title={isCollapsed ? label : undefined}
                   className={({ isActive }) =>
                     `flex items-center transition-all duration-150 relative
-                    ${sidebarCollapsed ? 'justify-center px-0 py-2.5 rounded-xl' : 'gap-2.5 py-2.5'}
+                    ${isCollapsed ? 'justify-center px-0 py-2.5 rounded-xl' : 'gap-2.5 py-2.5'}
                     ${isActive
-                      ? (sidebarCollapsed ? 'rounded-xl' : 'rounded-r-xl')
+                      ? (isCollapsed ? 'rounded-xl' : 'rounded-r-xl')
                       : 'rounded-xl'
                     }`
                   }
@@ -236,8 +277,8 @@ export default function Sidebar() {
                     fontSize: 13.5,
                     fontWeight: isActive ? 600 : 500,
                     fontFamily: 'var(--font-body)',
-                    paddingLeft: sidebarCollapsed ? 0 : undefined,
-                    paddingRight: sidebarCollapsed ? 0 : 12,
+                    paddingLeft: isCollapsed ? 0 : undefined,
+                    paddingRight: isCollapsed ? 0 : 12,
                     color: isActive ? '#5BDDC4' : '#8BA8C8',
                     backgroundColor: isActive
                       ? 'rgba(42,181,160,0.08)'
@@ -260,14 +301,14 @@ export default function Sidebar() {
                 >
                   {({ isActive }) => (
                     <>
-                      {isActive && !sidebarCollapsed && (
+                      {isActive && !isCollapsed && (
                         <div
                           className="absolute left-0 top-0 bottom-0 rounded-r-sm"
                           style={{ width: 3, backgroundColor: '#2AB5A0' }}
                         />
                       )}
-                      <Icon size={17} strokeWidth={1.8} className={`flex-shrink-0 sidebar-nav-icon ${sidebarCollapsed ? '' : 'ml-3'}`} />
-                      {!sidebarCollapsed && (
+                      <Icon size={17} strokeWidth={1.8} className={`flex-shrink-0 sidebar-nav-icon ${isCollapsed ? '' : 'ml-3'}`} />
+                      {!isCollapsed && (
                         <span>{label}</span>
                       )}
                     </>
@@ -278,25 +319,24 @@ export default function Sidebar() {
           </ul>
         </nav>
 
-        {/* User section — clickable, opens profile dropdown */}
+        {/* User section */}
         <div
           className="flex-shrink-0"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.06)', padding: sidebarCollapsed ? '8px 6px' : '8px' }}
+          style={{ borderTop: '1px solid rgba(255,255,255,0.06)', padding: isCollapsed ? '8px 6px' : '8px' }}
         >
           <button
             ref={userRef}
             onClick={toggleProfile}
-            title={sidebarCollapsed ? (user?.name || 'Profile') : 'Profile & Settings'}
+            title={isCollapsed ? (user?.name || 'Profile') : 'Profile & Settings'}
             className="flex items-center w-full rounded-lg px-2 py-2 transition-all duration-150"
             style={{
-              justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-              gap: sidebarCollapsed ? 0 : 10,
+              justifyContent: isCollapsed ? 'center' : 'flex-start',
+              gap: isCollapsed ? 0 : 10,
               backgroundColor: showProfile ? 'rgba(255,255,255,0.06)' : 'transparent',
             }}
             onMouseEnter={e => { if (!showProfile) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)' }}
             onMouseLeave={e => { if (!showProfile) e.currentTarget.style.backgroundColor = 'transparent' }}
           >
-            {/* Avatar */}
             {avatar ? (
               <img
                 src={avatar}
@@ -318,7 +358,7 @@ export default function Sidebar() {
                 {initials}
               </div>
             )}
-            {!sidebarCollapsed && (
+            {!isCollapsed && (
               <div className="flex-1 min-w-0 text-left">
                 <p className="text-sm font-semibold truncate leading-tight" style={{ color: '#ffffff', fontFamily: 'var(--font-body)' }}>
                   {user?.name || 'User'}
@@ -328,7 +368,7 @@ export default function Sidebar() {
                 </p>
               </div>
             )}
-            {!sidebarCollapsed && (
+            {!isCollapsed && (
               <Settings size={14} style={{ color: '#8BA8C8', flexShrink: 0 }} />
             )}
           </button>
@@ -341,7 +381,6 @@ export default function Sidebar() {
           ref={dropRef}
           style={{ ...dropStyle, backgroundColor:'#1a2535', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, boxShadow:'0 8px 32px rgba(0,0,0,0.4)' }}
         >
-          {/* User info header */}
           <div className="px-4 py-4" style={{ borderBottom:'1px solid rgba(255,255,255,0.08)' }}>
             <div className="flex items-center gap-3">
               {avatar ? (
@@ -364,7 +403,6 @@ export default function Sidebar() {
             </div>
           </div>
 
-          {/* Actions */}
           <div className="py-1">
             {[
               { label:'Settings', icon:Settings, onClick:() => { setShowProfile(false); navigate('/settings') } },

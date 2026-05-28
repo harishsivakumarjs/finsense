@@ -316,3 +316,24 @@ input:checked + .toggle-slider:before { transform: translateX(18px); }
 /* ── CSS Donut Chart ── */
 .custom-donut { border-radius: 50%; }
 .donut-inner { background: white; border-radius: 50%; width: 70%; height: 70%; }
+
+/* ── Mobile responsiveness ── */
+@media (max-width: 767px) {
+  /* Prevent body from scrolling horizontally */
+  body { overflow-x: hidden; }
+
+  /* Tables scroll horizontally inside their containers */
+  .overflow-x-auto { -webkit-overflow-scrolling: touch; }
+
+  /* Minimum touch target size */
+  button, a, [role="button"] { min-height: 36px; }
+
+  /* Notification bell dropdown: pin to viewport right edge on mobile */
+  [data-bell-dropdown] {
+    position: fixed !important;
+    right: 0.5rem !important;
+    top: 68px !important;
+    left: auto !important;
+    max-width: calc(100vw - 1rem) !important;
+  }
+}

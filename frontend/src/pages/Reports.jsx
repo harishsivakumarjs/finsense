@@ -115,9 +115,9 @@ export default function Reports() {
   }))
 
   return (
-    <div className="p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
+    <div className="p-4 md:p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color:'var(--on-surface)' }}>Reports</h1>
           <p className="text-sm mt-0.5" style={{ color:'var(--on-surface-variant)' }}>Financial snapshots and export tools</p>
@@ -181,7 +181,7 @@ export default function Reports() {
       </div>
 
       {/* 3 Report Cards */}
-      <div className="grid grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Monthly Report */}
         <Card className="p-5 flex flex-col gap-4" style={{ borderTop:'3px solid #2ab5a0' }}>
           <div className="flex items-center justify-between">
@@ -317,7 +317,7 @@ export default function Reports() {
 
       {/* Monthly Detail Grid */}
       {!loading && m && (
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Income Breakdown */}
           <Card className="overflow-hidden">
             <div className="px-5 py-4" style={{ borderBottom:'1px solid var(--outline-variant)' }}>

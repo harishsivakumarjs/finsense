@@ -171,8 +171,9 @@ export default function Investments() {
         api.get('/investments/allocation'),
         api.get('/investments/xirr'),
       ])
-      setInvestments(invR.data)
-      setAllocation(allocR.data)
+      console.log("API response investments:", invR.data)
+      setInvestments(Array.isArray(invR.data) ? invR.data : [])
+      setAllocation(Array.isArray(allocR.data) ? allocR.data : [])
       setXirr(xirrR.data)
     } catch { toast.error('Failed to load investments') }
     finally { setLoading(false) }
@@ -222,9 +223,9 @@ export default function Investments() {
   })
 
   return (
-    <div className="p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
+    <div className="p-4 md:p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color:'var(--on-surface)' }}>Investments</h1>
           <p className="text-sm mt-0.5" style={{ color:'var(--on-surface-variant)' }}>Track your portfolio performance</p>
@@ -236,7 +237,7 @@ export default function Investments() {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label:'Portfolio Value', val:formatINR(totalCurrent), icon:<PieChart size={18}/>,    color:'#2ab5a0', sub:`${investments.length} holdings` },
           { label:'Total Invested',  val:formatINR(totalInvested), icon:<BarChart2 size={18}/>,  color:'#4a8ed4', sub:'Capital deployed' },
@@ -256,15 +257,15 @@ export default function Investments() {
         ))}
       </div>
 
-      <div className="grid grid-cols-12 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Asset Allocation Donut — col-span-4 */}
-        <Card className="col-span-4 p-5">
+        <Card className="lg:col-span-4 p-5">
           <h3 className="text-base font-semibold mb-4" style={{ color:'var(--on-surface)' }}>Asset Allocation</h3>
           {loading ? <div className="h-48 shimmer rounded" /> : <DonutChart allocation={allocation} totalAlloc={totalAlloc} />}
         </Card>
 
         {/* Holdings Table — col-span-8 */}
-        <Card className="col-span-8 overflow-hidden">
+        <Card className="lg:col-span-8 overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom:'1px solid var(--outline-variant)' }}>
             <div className="flex items-center gap-3">
               <h3 className="text-base font-semibold" style={{ color:'var(--on-surface)' }}>All Assets</h3>

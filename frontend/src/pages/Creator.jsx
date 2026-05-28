@@ -81,8 +81,9 @@ export default function Creator() {
         api.get('/creator'),
         api.get('/creator/summary'),
       ])
-      setEntries(entriesR.data)
-      setSummary(summaryR.data)
+      console.log("API response creator:", entriesR.data, "summary:", summaryR.data)
+      setEntries(Array.isArray(entriesR.data) ? entriesR.data : [])
+      setSummary(Array.isArray(summaryR.data) ? summaryR.data : [])
     } catch { toast.error('Failed to load creator data') }
     finally { setLoading(false) }
   }
@@ -131,7 +132,7 @@ export default function Creator() {
   const currentMonth = new Date().toLocaleString('default', { month: 'long' }).toUpperCase()
 
   return (
-    <div className="p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
+    <div className="p-4 md:p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
 
       {/* Hero Header */}
       <Card className="p-8" style={{ background:'linear-gradient(135deg, #0B1426 0%, #1a3256 100%)' }}>
@@ -150,7 +151,7 @@ export default function Creator() {
       </Card>
 
       {/* 4 Bento Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { type:'adsense',     label:'AdSense',       icon:<Youtube size={20}/>,     trendLabel:'+12% MoM' },
           { type:'sponsorship', label:'Brand Deals',   icon:<DollarSign size={20}/>,  trendLabel:'2 deals' },
@@ -179,7 +180,7 @@ export default function Creator() {
         })}
       </div>
 
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* AdSense Performance Chart */}
         <Card className="p-5">
           <h3 className="text-base font-semibold mb-4" style={{ color:'var(--on-surface)' }}>AdSense Performance</h3>

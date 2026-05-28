@@ -15,6 +15,7 @@ class LoanCreate(BaseModel):
     start_date: date
     months_total: int
     is_active: bool = True
+    remaining_balance: Optional[Decimal] = None
 
 
 class LoanUpdate(BaseModel):
@@ -26,6 +27,7 @@ class LoanUpdate(BaseModel):
     interest_rate: Optional[Decimal] = None
     start_date: Optional[date] = None
     months_total: Optional[int] = None
+    paid_months: Optional[int] = None
     is_active: Optional[bool] = None
 
 
@@ -40,8 +42,11 @@ class LoanOut(BaseModel):
     interest_rate: Decimal
     start_date: date
     months_total: int
+    paid_months: int = 0
     is_active: bool
     created_at: datetime
+    remaining_balance: Optional[Decimal] = None
+    last_paid_date: Optional[date] = None
 
     model_config = {"from_attributes": True}
 
@@ -77,5 +82,30 @@ class CreditCardOut(BaseModel):
     due_date: Optional[int]
     statement_date: Optional[int]
     updated_at: datetime
+    last_paid_date: Optional[date] = None
 
+    model_config = {"from_attributes": True}
+
+
+class LoanPayPayload(BaseModel):
+    amount: Decimal
+    paid_on: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class CardPayPayload(BaseModel):
+    amount: Decimal
+    paid_on: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class DebtPaymentOut(BaseModel):
+    id: uuid.UUID
+    loan_id: Optional[uuid.UUID]
+    card_id: Optional[uuid.UUID]
+    amount_paid: Decimal
+    remaining_balance: Decimal
+    paid_on: date
+    notes: Optional[str]
+    created_at: datetime
     model_config = {"from_attributes": True}

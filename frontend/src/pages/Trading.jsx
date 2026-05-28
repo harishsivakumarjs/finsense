@@ -51,9 +51,10 @@ export default function Trading() {
         api.get('/trades/analytics'),
         api.get('/trades/pnl'),
       ])
-      setTrades(tradesR.data)
+      console.log("API response trades:", tradesR.data, "pnl:", pnlR.data)
+      setTrades(Array.isArray(tradesR.data) ? tradesR.data : [])
       setAnalytics(analyticsR.data)
-      const months = Object.entries(pnlR.data).map(([month, data]) => ({ month, pnl: data.pnl }))
+      const months = pnlR.data && typeof pnlR.data === 'object' ? Object.entries(pnlR.data).map(([month, data]) => ({ month, pnl: data.pnl })) : []
       setPnlData(months)
     } catch { toast.error('Failed to load trading data') }
     finally { setLoading(false) }
@@ -106,9 +107,9 @@ export default function Trading() {
   const livePnl = getLivePnl()
 
   return (
-    <div className="p-6 space-y-5" style={{ backgroundColor: 'var(--background)', minHeight: '100%' }}>
+    <div className="p-4 md:p-6 space-y-5" style={{ backgroundColor: 'var(--background)', minHeight: '100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--on-surface)' }}>Trading</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--on-surface-variant)' }}>Track your trades and performance</p>
@@ -119,12 +120,12 @@ export default function Trading() {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Net P&L', val: formatINR(a?.total_pnl ?? 0), color: (a?.total_pnl ?? 0) >= 0 ? '#006b5d' : '#ba1a1a', prefix: (a?.total_pnl ?? 0) >= 0 ? '+' : '', icon: <TrendingUp size={18} />, sub: 'All time' },
           { label: 'Win Rate', val: `${winRate.toFixed(1)}%`, color: winRateColor, prefix: '', icon: <Award size={18} />, sub: `${a?.total_trades || 0} trades` },
           { label: 'Best Trade', val: formatINR(a?.best_trade ?? 0), color:'var(--positive)', prefix: '+', icon: <TrendingUp size={18} />, sub: 'Single trade' },
-          { label: 'Worst Trade', val: formatINR(a?.worst_trade ?? 0), color:'var(--error)', prefix: '-', icon: <TrendingDown size={18} />, sub: 'Single trade' },
+          { label: 'Worst Trade', val: formatINR(Math.abs(a?.worst_trade ?? 0)), color:'var(--error)', prefix: '-', icon: <TrendingDown size={18} />, sub: 'Single trade' },
         ].map(({ label, val, color, prefix, icon, sub }) => (
           <Card key={label} className="p-5">
             <div className="flex items-center justify-between mb-3">
@@ -141,9 +142,9 @@ export default function Trading() {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Monthly P&L Chart */}
-        <Card className="col-span-2 p-5">
+        <Card className="lg:col-span-2 p-5">
           <h3 className="text-base font-semibold mb-4" style={{ color: 'var(--on-surface)' }}>Monthly P&L Distribution</h3>
           {pnlData.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-sm" style={{ color: 'var(--on-surface-variant)' }}>No trade data yet</div>
@@ -187,7 +188,7 @@ export default function Trading() {
               <div className="space-y-2">
                 {[
                   { label: 'Avg Win', val: formatINR(a?.avg_win || 0), color:'var(--positive)' },
-                  { label: 'Avg Loss', val: formatINR(a?.avg_loss || 0), color:'var(--error)' },
+                  { label: 'Avg Loss', val: formatINR(Math.abs(a?.avg_loss || 0)), color:'var(--error)' },
                   { label: 'Profit Factor', val: a?.profit_factor?.toFixed(2) || '—', color: 'var(--on-surface)' },
                 ].map(({ label, val, color }) => (
                   <div key={label} className="flex items-center justify-between">

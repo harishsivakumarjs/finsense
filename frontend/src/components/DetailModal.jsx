@@ -10,7 +10,7 @@ function Row({ label, value, valueStyle = {} }) {
   )
 }
 
-export default function DetailModal({ isOpen, onClose, title, color = '#2ab5a0', icon, rows = [], badge }) {
+export default function DetailModal({ isOpen, onClose, title, color = '#2ab5a0', icon, rows = [], badge, actions = [] }) {
   if (!isOpen) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -48,6 +48,19 @@ export default function DetailModal({ isOpen, onClose, title, color = '#2ab5a0',
         <div className="px-5 py-1 max-h-[60vh] overflow-y-auto">
           {rows.map((r, i) => <Row key={i} {...r} />)}
         </div>
+        {/* Action buttons */}
+        {actions.length > 0 && (
+          <div className="px-5 py-4 flex gap-2" style={{ borderTop: '1px solid var(--outline-variant)', backgroundColor: 'var(--surface-container-lowest)' }}>
+            {actions.map((action, i) => (
+              <button key={i} onClick={action.onClick}
+                className="flex items-center justify-center gap-1.5 flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                style={{ backgroundColor: action.bg || 'var(--surface-container-low)', color: action.color || 'var(--on-surface)', border: action.border || 'none' }}>
+                {action.icon}
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

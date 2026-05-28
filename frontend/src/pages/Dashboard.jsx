@@ -4,11 +4,16 @@ import {
   Utensils, Car, Zap, Heart, Film, ShoppingBag, BookOpen, BarChart2, ArrowDownCircle, CalendarClock,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import useStore from '../store/useStore'
 import api from '../api/axios'
 import MetricCard from '../components/MetricCard'
 import AlertCard from '../components/AlertCard'
+import DatePickerInput from '../components/DatePickerInput'
 import { formatINR, formatRelativeDate } from '../utils/format'
+
+const SOURCE_TYPES = ['salary','pocket_money','freelance','youtube','trading','investment','other']
+const TAX_CATEGORIES = ['salary','business','capital_gains','exempt','other']
 
 const QUICK_ADD_TYPES = ['expense', 'income']
 
@@ -50,33 +55,20 @@ function IncomeExpenseChart({ data, loading }) {
       No data yet — add income &amp; expenses
     </div>
   )
-  const maxVal = Math.max(...data.flatMap(d => [d.income||0, d.expense||0]), 1)
   return (
-    <div>
-      <div className="flex items-end gap-1" style={{ height:150 }}>
-        {data.map(d => (
-          <div key={d.month} className="flex-1 flex flex-col items-center">
-            <div className="flex items-end gap-0.5 w-full" style={{ height:130 }}>
-              <div className="flex-1 rounded-t-sm transition-all"
-                style={{ height:`${Math.max(((d.income||0)/maxVal)*100,1)}%`, backgroundColor:'rgba(42,181,160,0.35)' }} />
-              <div className="flex-1 rounded-t-sm transition-all"
-                style={{ height:`${Math.max(((d.expense||0)/maxVal)*100,1)}%`, backgroundColor:'rgba(186,26,26,0.35)' }} />
-            </div>
-            <span className="text-[9px] mt-1" style={{ color:'var(--on-surface-variant)' }}>{d.month}</span>
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center gap-4 mt-3">
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor:'rgba(42,181,160,0.35)' }} />
-          <span className="text-xs" style={{ color:'var(--on-surface-variant)' }}>Income</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor:'rgba(186,26,26,0.35)' }} />
-          <span className="text-xs" style={{ color:'var(--on-surface-variant)' }}>Expense</span>
-        </div>
-      </div>
-    </div>
+    <ResponsiveContainer width="100%" height={160}>
+      <BarChart data={data} barSize={10} barGap={2}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--outline-variant)" vertical={false} />
+        <XAxis dataKey="month" tick={{ fontSize:10, fill:'var(--on-surface-variant)' }} axisLine={false} tickLine={false} />
+        <YAxis tick={{ fontSize:10, fill:'var(--on-surface-variant)' }} axisLine={false} tickLine={false} tickFormatter={v => v>=1000?`${Math.round(v/1000)}k`:v} width={32} />
+        <Tooltip
+          formatter={(v, name) => [formatINR(v), name === 'income' ? 'Income' : 'Expense']}
+          contentStyle={{ backgroundColor:'var(--surface)', border:'1px solid var(--outline-variant)', borderRadius:8, fontSize:12 }}
+        />
+        <Bar dataKey="income" fill="rgba(42,181,160,0.7)" radius={[3,3,0,0]} name="income" />
+        <Bar dataKey="expense" fill="rgba(186,26,26,0.65)" radius={[3,3,0,0]} name="expense" />
+      </BarChart>
+    </ResponsiveContainer>
   )
 }
 
@@ -123,14 +115,65 @@ function DebtRatioChart({ data, loading }) {
 const SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 export default function Dashboard() {
-  const { user, dashboard, dashboardLoading, fetchDashboard, selectedFY } = useStore()
+  const { user, dashboard, dashboardLoading, fetchDashboard, selectedFY, debtLastUpdated } = useStore()
   const [quickType, setQuickType] = useState('expense')
   const [quickAmount, setQuickAmount] = useState('')
   const [quickDesc, setQuickDesc] = useState('')
   const [quickCategory, setQuickCategory] = useState('food')
+  const [quickDate, setQuickDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [quickSourceType, setQuickSourceType] = useState('salary')
+  const [quickTaxCategory, setQuickTaxCategory] = useState('salary')
   const [submitting, setSubmitting] = useState(false)
+  const [upcomingPayments, setUpcomingPayments] = useState([])
+  const [upcomingDetail, setUpcomingDetail] = useState(null)
+  const [payingUpcoming, setPayingUpcoming] = useState(false)
 
   useEffect(() => { fetchDashboard().catch(() => {}) }, [selectedFY])
+
+  useEffect(() => {
+    const fetchUpcoming = async () => {
+      try {
+        const today = new Date()
+        const upcoming = []
+        const [loansR, cardsR, subsR] = await Promise.all([
+          api.get('/loans').catch(() => ({ data: [] })),
+          api.get('/loans/cards').catch(() => ({ data: [] })),
+          api.get('/expenses/subscriptions').catch(() => ({ data: [] })),
+        ])
+        const isPaidThisMonth = (lastPaidDate) => {
+          if (!lastPaidDate) return false
+          const d = new Date(lastPaidDate)
+          return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth()
+        }
+        for (const loan of (Array.isArray(loansR.data) ? loansR.data : [])) {
+          if (!loan.is_active) continue
+          if (isPaidThisMonth(loan.last_paid_date)) continue
+          const start = new Date(loan.start_date)
+          const dueDay = start.getDate()
+          const dueThisMonth = new Date(today.getFullYear(), today.getMonth(), dueDay)
+          const dueNext = dueThisMonth < today ? new Date(today.getFullYear(), today.getMonth() + 1, dueDay) : dueThisMonth
+          upcoming.push({ name: loan.loan_name || 'Loan EMI', amount: parseFloat(loan.emi_amount), due_date: dueNext.toISOString().split('T')[0], type: 'emi', loan_id: loan.id })
+        }
+        for (const card of (Array.isArray(cardsR.data) ? cardsR.data : [])) {
+          if (!card.due_date || parseFloat(card.minimum_due) <= 0) continue
+          if (isPaidThisMonth(card.last_paid_date)) continue
+          const dueThisMonth = new Date(today.getFullYear(), today.getMonth(), card.due_date)
+          const dueNext = dueThisMonth < today ? new Date(today.getFullYear(), today.getMonth() + 1, card.due_date) : dueThisMonth
+          upcoming.push({ name: `${card.card_name} Bill`, amount: parseFloat(card.minimum_due), due_date: dueNext.toISOString().split('T')[0], type: 'card', card_id: card.id })
+        }
+        for (const sub of (Array.isArray(subsR.data) ? subsR.data : [])) {
+          if (sub.is_active === false) continue
+          const subDate = new Date(sub.spent_on || today)
+          const dueThisMonth = new Date(today.getFullYear(), today.getMonth(), subDate.getDate())
+          const dueNext = dueThisMonth < today ? new Date(today.getFullYear(), today.getMonth() + 1, subDate.getDate()) : dueThisMonth
+          upcoming.push({ name: sub.description || sub.category, amount: parseFloat(sub.amount), due_date: dueNext.toISOString().split('T')[0], type: 'subscription' })
+        }
+        upcoming.sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
+        setUpcomingPayments(upcoming.slice(0, 8))
+      } catch { /* silent */ }
+    }
+    fetchUpcoming()
+  }, [selectedFY, debtLastUpdated])
 
   const greeting = () => {
     const h = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).getHours()
@@ -148,14 +191,14 @@ export default function Dashboard() {
     try {
       if (quickType === 'expense') {
         await api.post('/expenses', {
-          amount:parseFloat(quickAmount), category:quickCategory,
-          description:quickDesc, spent_on:new Date().toISOString().split('T')[0],
+          amount: parseFloat(quickAmount), category: quickCategory,
+          description: quickDesc, spent_on: quickDate,
         })
         toast.success('Expense added!')
       } else {
         await api.post('/income', {
-          amount:parseFloat(quickAmount), source_type:'other',
-          description:quickDesc, received_on:new Date().toISOString().split('T')[0], tax_category:'salary',
+          amount: parseFloat(quickAmount), source_type: quickSourceType,
+          description: quickDesc, received_on: quickDate, tax_category: quickTaxCategory,
         })
         toast.success('Income added!')
       }
@@ -163,6 +206,27 @@ export default function Dashboard() {
       fetchDashboard()
     } catch { toast.error('Failed to add') }
     finally { setSubmitting(false) }
+  }
+
+  const handlePayUpcoming = async () => {
+    if (!upcomingDetail) return
+    setPayingUpcoming(true)
+    const today = new Date().toISOString().split('T')[0]
+    try {
+      const p = upcomingDetail
+      if (p.type === 'emi' && p.loan_id) {
+        await api.post(`/loans/${p.loan_id}/pay`, { amount: p.amount, paid_on: today, notes: p.name })
+      } else if (p.type === 'card' && p.card_id) {
+        await api.post(`/loans/cards/${p.card_id}/pay`, { amount: p.amount, paid_on: today, notes: p.name })
+      } else {
+        await api.post('/expenses', { amount: p.amount, category: 'bills', description: p.name, spent_on: today })
+      }
+      setUpcomingPayments(prev => prev.filter((_, i) => i !== p._idx))
+      setUpcomingDetail(null)
+      fetchDashboard()
+      toast.success('Payment recorded!')
+    } catch { toast.error('Failed to record payment') }
+    finally { setPayingUpcoming(false) }
   }
 
   const d = dashboard
@@ -173,18 +237,18 @@ export default function Dashboard() {
   const inputStyle = { backgroundColor:'var(--surface-container-low)', borderColor:'var(--outline-variant)', color:'var(--on-surface)' }
 
   return (
-    <div className="p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
+    <div className="p-4 md:p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
 
       {/* Row 1: Greeting */}
       <div>
-        <h2 className="text-2xl font-bold" style={{ color:'var(--on-surface)' }}>
+        <h2 className="text-xl md:text-2xl font-bold" style={{ color:'var(--on-surface)' }}>
           {greeting()}, {user?.name?.split(' ')[0] || 'there'} 👋
         </h2>
         <p className="text-sm mt-1" style={{ color:'var(--on-surface-variant)' }}>{today}</p>
       </div>
 
       {/* Row 2: 4 Metric Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard title="Net Worth" value={d?.net_worth} subtitle={`Assets ${formatINR(d?.total_assets)}`} color="teal" icon={TrendingUp} loading={loading} />
         <MetricCard title="Free Cash" value={d?.free_cash} subtitle="After EMIs & expenses" color={d?.free_cash<0?'red':'info'} icon={DollarSign} loading={loading} />
         <MetricCard title="Debt Score" value={`${d?.debt_score??0}/100`} subtitle={d?.debt_verdict?.message||'No debt'}
@@ -193,7 +257,7 @@ export default function Dashboard() {
       </div>
 
       {/* Row 3: Charts + Quick Add */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="p-5">
           <h3 className="text-sm font-semibold mb-4" style={{ color:'var(--on-surface)' }}>Income vs Expenses</h3>
           <IncomeExpenseChart data={d?.income_vs_expense_data} loading={loading} />
@@ -224,16 +288,37 @@ export default function Dashboard() {
               <input type="number" value={quickAmount} onChange={e => setQuickAmount(e.target.value)} placeholder="Amount"
                 className="w-full pl-8 pr-4 py-2.5 rounded-lg text-sm focus:outline-none border" style={inputStyle} />
             </div>
-            {quickType === 'expense' && (
-              <select value={quickCategory} onChange={e => setQuickCategory(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-lg text-sm focus:outline-none border" style={inputStyle}>
-                {['food','transport','bills','health','entertainment','shopping','subscriptions','education','other'].map(c => (
-                  <option key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</option>
-                ))}
-              </select>
+            {quickType === 'expense' ? (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color:'var(--on-surface-variant)' }}>Category</p>
+                <select value={quickCategory} onChange={e => setQuickCategory(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-lg text-sm focus:outline-none border" style={inputStyle}>
+                  {['food','transport','bills','health','entertainment','shopping','subscriptions','education','other'].map(c => (
+                    <option key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color:'var(--on-surface-variant)' }}>Source</p>
+                  <select value={quickSourceType} onChange={e => setQuickSourceType(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-lg text-sm focus:outline-none border" style={inputStyle}>
+                    {SOURCE_TYPES.map(s => <option key={s} value={s}>{s.replace(/_/g,' ').replace(/^\w/,c=>c.toUpperCase())}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color:'var(--on-surface-variant)' }}>Tax Category</p>
+                  <select value={quickTaxCategory} onChange={e => setQuickTaxCategory(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-lg text-sm focus:outline-none border" style={inputStyle}>
+                    {TAX_CATEGORIES.map(t => <option key={t} value={t}>{t.replace(/_/g,' ').replace(/^\w/,c=>c.toUpperCase())}</option>)}
+                  </select>
+                </div>
+              </>
             )}
             <input type="text" value={quickDesc} onChange={e => setQuickDesc(e.target.value)} placeholder="Description (optional)"
               className="w-full px-4 py-2.5 rounded-lg text-sm focus:outline-none border" style={inputStyle} />
+            <DatePickerInput value={quickDate} onChange={setQuickDate} />
             <button type="submit" disabled={submitting}
               className="w-full py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-all"
               style={{ backgroundColor:'#2ab5a0', color:'#fff', opacity:submitting?0.7:1 }}>
@@ -248,7 +333,7 @@ export default function Dashboard() {
       {d?.top_alert && <AlertCard level={d.top_alert.level} message={d.top_alert.message} />}
 
       {/* Row 4: Activity | This Month Summary | Upcoming Payments */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Recent Activity */}
         <Card className="p-5">
           <h3 className="text-sm font-semibold mb-4" style={{ color:'var(--on-surface)' }}>Recent Activity</h3>
@@ -337,14 +422,17 @@ export default function Dashboard() {
             <div className="space-y-3">
               {[...Array(4)].map((_,i) => <div key={i} className="h-12 shimmer rounded-xl" />)}
             </div>
-          ) : d?.upcoming_payments?.length ? (
+          ) : upcomingPayments.length ? (
             <div className="space-y-3">
-              {d.upcoming_payments.map((p, i) => {
+              {upcomingPayments.map((p, i) => {
                 const dueDate = new Date(p.due_date)
                 const daysLeft = Math.ceil((dueDate - new Date()) / 86400000)
                 const urgColor = daysLeft <= 3 ? '#ba1a1a' : daysLeft <= 7 ? '#d4932a' : '#2ab5a0'
                 return (
-                  <div key={i} className="flex items-center gap-3 py-2">
+                  <div key={i} className="flex items-center gap-3 py-2 px-1 rounded-xl cursor-pointer transition-colors"
+                    onClick={() => setUpcomingDetail({ ...p, _idx: i })}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor='var(--surface-container-low)'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor='transparent'}>
                     <div className="w-11 h-11 rounded-xl flex flex-col items-center justify-center flex-shrink-0"
                       style={{ backgroundColor:`${urgColor}15` }}>
                       <span className="text-sm font-bold leading-none" style={{ color:urgColor }}>{dueDate.getDate()}</span>
@@ -367,6 +455,56 @@ export default function Dashboard() {
           )}
         </Card>
       </div>
+
+      {/* Upcoming Payment Detail Modal */}
+      {upcomingDetail && (() => {
+        const p = upcomingDetail
+        const dueDate = new Date(p.due_date)
+        const daysLeft = Math.ceil((dueDate - new Date()) / 86400000)
+        const urgColor = daysLeft <= 3 ? '#ba1a1a' : daysLeft <= 7 ? '#d4932a' : '#2ab5a0'
+        const typeLabel = p.type === 'emi' ? 'Loan EMI' : p.type === 'card' ? 'Credit Card Bill' : 'Subscription'
+        return (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ backgroundColor:'rgba(0,0,0,0.45)' }}
+            onClick={e => { if (e.target === e.currentTarget) setUpcomingDetail(null) }}>
+            <div className="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl overflow-hidden"
+              style={{ backgroundColor:'var(--surface)', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}>
+              <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom:'1px solid var(--outline-variant)' }}>
+                <div className="flex items-center gap-2">
+                  <CalendarClock size={15} style={{ color:urgColor }} />
+                  <span className="text-sm font-semibold" style={{ color:'var(--on-surface)' }}>Payment Due</span>
+                </div>
+                <button onClick={() => setUpcomingDetail(null)} className="p-1 rounded" style={{ color:'var(--on-surface-variant)' }}>✕</button>
+              </div>
+              <div className="px-5 py-4 space-y-3">
+                {[
+                  { label:'Name', value:p.name },
+                  { label:'Type', value:typeLabel },
+                  { label:'Amount', value:formatINR(p.amount), style:{ fontFamily:'monospace', color:'var(--error)', fontWeight:700 } },
+                  { label:'Due Date', value:`${dueDate.toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' })}` },
+                  { label:'Status', value:daysLeft < 0 ? '⚠ Overdue' : daysLeft === 0 ? '📅 Due Today' : `${daysLeft} days remaining`, style:{ color:urgColor, fontWeight:600 } },
+                ].map(({ label, value, style }) => (
+                  <div key={label} className="flex items-center justify-between py-2" style={{ borderBottom:'1px solid var(--outline-variant)' }}>
+                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color:'var(--on-surface-variant)' }}>{label}</span>
+                    <span className="text-sm" style={{ color:'var(--on-surface)', ...style }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="px-5 pb-5 pt-2 flex gap-3">
+                <button onClick={() => setUpcomingDetail(null)}
+                  className="flex-1 py-2.5 rounded-lg text-sm font-medium border"
+                  style={{ borderColor:'var(--outline-variant)', color:'var(--on-surface-variant)' }}>
+                  Close
+                </button>
+                <button onClick={handlePayUpcoming} disabled={payingUpcoming}
+                  className="flex-1 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-all"
+                  style={{ backgroundColor:'#2ab5a0', color:'#fff', opacity:payingUpcoming?0.7:1 }}>
+                  {payingUpcoming ? 'Recording…' : '✓ Mark as Paid'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

@@ -284,7 +284,8 @@ export default function Insurance() {
     setLoading(true)
     try {
       const [listR, sumR] = await Promise.all([api.get('/insurance'), api.get('/insurance/summary')])
-      setPolicies(listR.data || [])
+      console.log("API response insurance:", listR.data, "summary:", sumR.data)
+      setPolicies(Array.isArray(listR.data) ? listR.data : [])
       setSummary(sumR.data || null)
     } catch { toast.error('Failed to load insurance data') }
     finally { setLoading(false) }
@@ -303,9 +304,9 @@ export default function Insurance() {
   const filteredPolicies = policies.filter(p => showActive ? p.is_active !== false : p.is_active === false)
 
   return (
-    <div className="p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
+    <div className="p-4 md:p-6 space-y-5" style={{ backgroundColor:'var(--background)', minHeight:'100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color:'var(--on-surface)' }}>Insurance Policies</h1>
           <p className="text-sm mt-0.5" style={{ color:'var(--on-surface-variant)' }}>Manage your coverage and track renewals</p>
@@ -318,11 +319,11 @@ export default function Insurance() {
 
       {/* Metric Cards */}
       {summary && (
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label:'Total Coverage',  value:formatINRCompact(summary.total_coverage),        sub:formatINR(summary.total_coverage),         color:'#2ab5a0' },
-            { label:'Annual Premium',  value:formatINRCompact(summary.total_annual_premium),  sub:'Total yearly outflow',                    color:'var(--error)' },
-            { label:'Tax Benefit',     value:formatINRCompact(summary.total_tax_benefit),     sub:`80C: ${formatINRCompact(summary.section_80c)}  80D: ${formatINRCompact(summary.section_80d)}`, color:'#8b7fd4' },
+            { label:'Total Coverage',  value:formatINR(summary.total_coverage),        sub:'Sum assured across all policies',         color:'#2ab5a0' },
+            { label:'Annual Premium',  value:formatINR(summary.total_annual_premium),  sub:'Total yearly outflow',                    color:'var(--error)' },
+            { label:'Tax Benefit',     value:formatINR(summary.total_tax_benefit),     sub:`80C: ${formatINR(summary.section_80c)}  80D: ${formatINR(summary.section_80d)}`, color:'#8b7fd4' },
             { label:'Active Policies', value:summary.active_count,                            sub:'Currently active',                         color:'#4a8ed4' },
           ].map(m => (
             <Card key={m.label} className="p-5">
@@ -335,10 +336,10 @@ export default function Insurance() {
       )}
 
       {/* Main Layout: col-span-4 LEFT | col-span-8 RIGHT */}
-      <div className="grid grid-cols-12 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
 
         {/* LEFT — Upcoming Renewals + Tax Benefits */}
-        <div className="col-span-4 space-y-4">
+        <div className="lg:col-span-4 space-y-4">
           {/* Upcoming Renewals */}
           <Card className="overflow-hidden">
             <div className="px-5 py-4" style={{ borderBottom:'1px solid var(--outline-variant)' }}>
@@ -408,7 +409,7 @@ export default function Insurance() {
         </div>
 
         {/* RIGHT — All Policies Table */}
-        <Card className="col-span-8 overflow-hidden">
+        <Card className="lg:col-span-8 overflow-hidden">
           <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom:'1px solid var(--outline-variant)' }}>
             <div className="flex items-center gap-3">
               <span className="text-sm font-semibold" style={{ color:'var(--on-surface)' }}>All Policies</span>

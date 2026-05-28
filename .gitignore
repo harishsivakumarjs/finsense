@@ -1,6 +1,7 @@
 # Environment files
 backend/.env
 mobile/.env
+frontend/.env
 frontend/.env.local
 
 # Python

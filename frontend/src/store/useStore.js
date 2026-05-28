@@ -28,13 +28,20 @@ const useStore = create((set, get) => ({
     set({ selectedFY: fy })
   },
 
-  // Avatar
-  avatar: localStorage.getItem('finsense_avatar') || null,
+  // Avatar — prefer server-persisted photo over localStorage fallback
+  avatar: (() => {
+    const storedUser = JSON.parse(localStorage.getItem('finsense_user') || 'null')
+    return storedUser?.photo || localStorage.getItem('finsense_avatar') || null
+  })(),
   setAvatar: (url) => {
     if (url) localStorage.setItem('finsense_avatar', url)
     else localStorage.removeItem('finsense_avatar')
     set({ avatar: url })
   },
+
+  // Debt payment version — incremented when any debt payment is made; triggers Dashboard upcoming refetch
+  debtLastUpdated: 0,
+  incrementDebtVersion: () => set({ debtLastUpdated: Date.now() }),
 
   // Auth state
   user: JSON.parse(localStorage.getItem('finsense_user') || 'null'),
@@ -42,7 +49,13 @@ const useStore = create((set, get) => ({
 
   setUser: (user) => {
     localStorage.setItem('finsense_user', JSON.stringify(user))
-    set({ user })
+    // Sync avatar when user data updates (e.g., after login)
+    if (user?.photo) {
+      localStorage.setItem('finsense_avatar', user.photo)
+      set({ user, avatar: user.photo })
+    } else {
+      set({ user })
+    }
   },
 
   setToken: (token) => {
@@ -80,7 +93,7 @@ const useStore = create((set, get) => ({
     set({ expensesLoading: true })
     try {
       const res = await api.get('/expenses', { params })
-      set({ expenses: res.data, expensesLoading: false })
+      set({ expenses: Array.isArray(res.data) ? res.data : [], expensesLoading: false })
     } catch (err) {
       set({ expensesLoading: false })
       throw err
@@ -99,7 +112,7 @@ const useStore = create((set, get) => ({
         api.get('/loans'),
         api.get('/loans/cards'),
       ])
-      set({ loans: loansRes.data, creditCards: cardsRes.data, loansLoading: false })
+      set({ loans: Array.isArray(loansRes.data) ? loansRes.data : [], creditCards: Array.isArray(cardsRes.data) ? cardsRes.data : [], loansLoading: false })
     } catch (err) {
       set({ loansLoading: false })
       throw err
@@ -114,7 +127,7 @@ const useStore = create((set, get) => ({
     set({ tradesLoading: true })
     try {
       const res = await api.get('/trades', { params })
-      set({ trades: res.data, tradesLoading: false })
+      set({ trades: Array.isArray(res.data) ? res.data : [], tradesLoading: false })
     } catch (err) {
       set({ tradesLoading: false })
       throw err
@@ -129,7 +142,7 @@ const useStore = create((set, get) => ({
     set({ investmentsLoading: true })
     try {
       const res = await api.get('/investments')
-      set({ investments: res.data, investmentsLoading: false })
+      set({ investments: Array.isArray(res.data) ? res.data : [], investmentsLoading: false })
     } catch (err) {
       set({ investmentsLoading: false })
       throw err
@@ -144,7 +157,7 @@ const useStore = create((set, get) => ({
     set({ friendsLoading: true })
     try {
       const res = await api.get('/friends', { params })
-      set({ friends: res.data, friendsLoading: false })
+      set({ friends: Array.isArray(res.data) ? res.data : [], friendsLoading: false })
     } catch (err) {
       set({ friendsLoading: false })
       throw err
@@ -159,7 +172,7 @@ const useStore = create((set, get) => ({
     set({ incomeLoading: true })
     try {
       const res = await api.get('/income', { params })
-      set({ incomeEntries: res.data, incomeLoading: false })
+      set({ incomeEntries: Array.isArray(res.data) ? res.data : [], incomeLoading: false })
     } catch (err) {
       set({ incomeLoading: false })
       throw err

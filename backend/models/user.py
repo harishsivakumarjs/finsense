@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Enum
+from sqlalchemy import Column, String, Text, DateTime, Enum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from database import Base
@@ -14,6 +14,7 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     name = Column(String, nullable=False)
     mobile = Column(String, nullable=True)
+    photo = Column(Text, nullable=True)
     mode = Column(Enum("student", "earner", name="user_mode"), default="student", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -32,3 +33,4 @@ class User(Base):
     tax_deductions = relationship("TaxDeduction", back_populates="user", cascade="all, delete-orphan")
     advance_tax_payments = relationship("AdvanceTaxPayment", back_populates="user", cascade="all, delete-orphan")
     insurance_policies = relationship("InsurancePolicy", back_populates="user", cascade="all, delete-orphan")
+    debt_payments = relationship("DebtPayment", back_populates="user", cascade="all, delete-orphan")

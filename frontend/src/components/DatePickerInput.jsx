@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Calendar } from 'lucide-react'
 
 export default function DatePickerInput({ value, onChange, placeholder='DD/MM/YYYY', disabled=false }) {
   const [open, setOpen] = useState(false)
+  const [yearEditing, setYearEditing] = useState(false)
+  const [yearInputVal, setYearInputVal] = useState('')
   const containerRef = useRef(null)
+  const yearInputRef = useRef(null)
 
   const todayDate = new Date()
   const todayY = todayDate.getFullYear()
@@ -27,13 +30,20 @@ export default function DatePickerInput({ value, onChange, placeholder='DD/MM/YY
   }, [value])
 
   useEffect(() => {
-    if (!open) return
+    if (!open) { setYearEditing(false); return }
     const handle = (e) => {
       if (containerRef.current && !containerRef.current.contains(e.target)) setOpen(false)
     }
     document.addEventListener('mousedown', handle)
     return () => document.removeEventListener('mousedown', handle)
   }, [open])
+
+  useEffect(() => {
+    if (yearEditing && yearInputRef.current) {
+      yearInputRef.current.focus()
+      yearInputRef.current.select()
+    }
+  }, [yearEditing])
 
   const display = parsed
     ? `${String(parsed.day).padStart(2,'0')}/${String(parsed.month).padStart(2,'0')}/${parsed.year}`
@@ -64,8 +74,20 @@ export default function DatePickerInput({ value, onChange, placeholder='DD/MM/YY
     setOpen(false)
   }
 
+  const commitYear = () => {
+    const y = parseInt(yearInputVal, 10)
+    if (y >= 1900 && y <= 2100) setViewYear(y)
+    setYearEditing(false)
+  }
+
   const isSelected = (day) => parsed && day===parsed.day && viewMonth===parsed.month && viewYear===parsed.year
   const isToday = (day) => day===todayD && viewMonth===todayM && viewYear===todayY
+
+  const navBtnStyle = { color:'var(--on-surface-variant)' }
+  const navBtnHover = {
+    onMouseEnter: e => e.currentTarget.style.backgroundColor='var(--surface-container-low)',
+    onMouseLeave: e => e.currentTarget.style.backgroundColor='transparent',
+  }
 
   return (
     <div ref={containerRef} className="relative">
@@ -86,20 +108,57 @@ export default function DatePickerInput({ value, onChange, placeholder='DD/MM/YY
         <div className="absolute top-full mt-2 left-0 z-50 rounded-xl p-3 w-72"
           style={{ backgroundColor:'var(--surface)', border:'1px solid var(--outline-variant)', boxShadow:'0 8px 32px rgba(0,0,0,0.12)' }}
           onMouseDown={e => e.stopPropagation()}>
+
+          {/* Month / Year header */}
           <div className="flex items-center justify-between mb-2">
-            <button type="button" onClick={prevMonth} className="p-1.5 rounded-lg transition-colors"
-              style={{ color:'var(--on-surface-variant)' }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor='var(--surface-container-low)'}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor='transparent'}>
+            <button type="button" onClick={prevMonth} className="p-1.5 rounded-lg transition-colors" style={navBtnStyle} {...navBtnHover}>
               <ChevronLeft size={14} />
             </button>
-            <span className="text-sm font-semibold select-none" style={{ color:'var(--on-surface)' }}>
-              {MONTHS[viewMonth-1]} {viewYear}
-            </span>
-            <button type="button" onClick={nextMonth} className="p-1.5 rounded-lg transition-colors"
-              style={{ color:'var(--on-surface-variant)' }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor='var(--surface-container-low)'}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor='transparent'}>
+
+            <div className="flex items-center gap-1 select-none">
+              <span className="text-sm font-semibold" style={{ color:'var(--on-surface)' }}>{MONTHS[viewMonth-1]}</span>
+
+              {/* Year: editable input or clickable label + arrows */}
+              <div className="flex items-center gap-0.5 ml-1">
+                {yearEditing ? (
+                  <input
+                    ref={yearInputRef}
+                    type="number"
+                    value={yearInputVal}
+                    onChange={e => setYearInputVal(e.target.value)}
+                    onBlur={commitYear}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') { e.preventDefault(); commitYear() }
+                      if (e.key === 'Escape') setYearEditing(false)
+                      if (e.key === 'ArrowUp') { e.preventDefault(); setYearInputVal(v => String(parseInt(v,10)+1)) }
+                      if (e.key === 'ArrowDown') { e.preventDefault(); setYearInputVal(v => String(parseInt(v,10)-1)) }
+                    }}
+                    className="text-sm font-semibold text-center rounded focus:outline-none border"
+                    style={{
+                      width: 56, backgroundColor:'var(--surface-container-low)',
+                      borderColor:'#2ab5a0', color:'var(--on-surface)',
+                    }}
+                  />
+                ) : (
+                  <button type="button" onClick={() => { setYearEditing(true); setYearInputVal(viewYear.toString()) }}
+                    className="text-sm font-semibold px-1 rounded transition-colors" style={{ color:'var(--on-surface)' }} {...navBtnHover}>
+                    {viewYear}
+                  </button>
+                )}
+                <div className="flex flex-col">
+                  <button type="button" onClick={() => { setViewYear(y => y+1); setYearInputVal(v => String(parseInt(v,10)+1)) }}
+                    className="p-0.5 rounded transition-colors" style={navBtnStyle} {...navBtnHover}>
+                    <ChevronUp size={11} />
+                  </button>
+                  <button type="button" onClick={() => { setViewYear(y => y-1); setYearInputVal(v => String(parseInt(v,10)-1)) }}
+                    className="p-0.5 rounded transition-colors" style={navBtnStyle} {...navBtnHover}>
+                    <ChevronDown size={11} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <button type="button" onClick={nextMonth} className="p-1.5 rounded-lg transition-colors" style={navBtnStyle} {...navBtnHover}>
               <ChevronRight size={14} />
             </button>
           </div>

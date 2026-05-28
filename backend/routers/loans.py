@@ -1,13 +1,15 @@
 from datetime import date
+from decimal import Decimal
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Loan, CreditCard, IncomeEntry, User
+from models import Loan, CreditCard, DebtPayment, Expense, IncomeEntry, User
 from schemas.loan import (
     LoanCreate, LoanUpdate, LoanOut,
     CreditCardCreate, CreditCardUpdate, CreditCardOut,
+    LoanPayPayload, CardPayPayload, DebtPaymentOut,
 )
 from routers.auth import get_current_user
 from engines.debt_score import calculate_debt_score, get_score_verdict
@@ -35,6 +37,15 @@ def create_loan(
     db.commit()
     db.refresh(loan)
     return loan
+
+
+# GET /payments must come before /{loan_id} to avoid routing conflicts
+@router.get("/payments", response_model=List[DebtPaymentOut])
+def get_all_payments(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return db.query(DebtPayment).filter(DebtPayment.user_id == current_user.id).order_by(DebtPayment.paid_on.desc()).all()
 
 
 @router.put("/{loan_id}", response_model=LoanOut)
@@ -65,6 +76,60 @@ def delete_loan(
         raise HTTPException(status_code=404, detail="Loan not found")
     db.delete(loan)
     db.commit()
+
+
+@router.post("/{loan_id}/pay", response_model=LoanOut)
+def pay_loan_emi(
+    loan_id: str,
+    payload: LoanPayPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    loan = db.query(Loan).filter(Loan.id == loan_id, Loan.user_id == current_user.id).first()
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+
+    amount = float(payload.amount)
+    current_remaining = float(loan.remaining_balance if loan.remaining_balance is not None else loan.principal)
+    new_remaining = max(0.0, current_remaining - amount)
+
+    loan.remaining_balance = new_remaining
+    loan.last_paid_date = payload.paid_on or date.today()
+    loan.paid_months = (int(loan.paid_months or 0)) + 1
+
+    payment = DebtPayment(
+        user_id=current_user.id,
+        loan_id=loan.id,
+        amount_paid=amount,
+        remaining_balance=new_remaining,
+        paid_on=payload.paid_on or date.today(),
+        notes=payload.notes,
+    )
+    db.add(payment)
+
+    expense = Expense(
+        user_id=current_user.id,
+        amount=amount,
+        category='bills',
+        description=payload.notes or f"{loan.loan_name} EMI",
+        spent_on=payload.paid_on or date.today(),
+    )
+    db.add(expense)
+    db.commit()
+    db.refresh(loan)
+    return loan
+
+
+@router.get("/{loan_id}/payments", response_model=List[DebtPaymentOut])
+def get_loan_payments(
+    loan_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    loan = db.query(Loan).filter(Loan.id == loan_id, Loan.user_id == current_user.id).first()
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+    return db.query(DebtPayment).filter(DebtPayment.loan_id == loan_id).order_by(DebtPayment.paid_on.desc()).all()
 
 
 # Credit Cards
@@ -117,6 +182,58 @@ def delete_card(
         raise HTTPException(status_code=404, detail="Credit card not found")
     db.delete(card)
     db.commit()
+
+
+@router.post("/cards/{card_id}/pay", response_model=CreditCardOut)
+def pay_card_bill(
+    card_id: str,
+    payload: CardPayPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    card = db.query(CreditCard).filter(CreditCard.id == card_id, CreditCard.user_id == current_user.id).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="Credit card not found")
+
+    amount = float(payload.amount)
+    new_outstanding = max(0.0, float(card.outstanding) - amount)
+
+    card.outstanding = new_outstanding
+    card.last_paid_date = payload.paid_on or date.today()
+
+    payment = DebtPayment(
+        user_id=current_user.id,
+        card_id=card.id,
+        amount_paid=amount,
+        remaining_balance=new_outstanding,
+        paid_on=payload.paid_on or date.today(),
+        notes=payload.notes,
+    )
+    db.add(payment)
+
+    expense = Expense(
+        user_id=current_user.id,
+        amount=amount,
+        category='bills',
+        description=payload.notes or f"{card.card_name} Bill Payment",
+        spent_on=payload.paid_on or date.today(),
+    )
+    db.add(expense)
+    db.commit()
+    db.refresh(card)
+    return card
+
+
+@router.get("/cards/{card_id}/payments", response_model=List[DebtPaymentOut])
+def get_card_payments(
+    card_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    card = db.query(CreditCard).filter(CreditCard.id == card_id, CreditCard.user_id == current_user.id).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="Credit card not found")
+    return db.query(DebtPayment).filter(DebtPayment.card_id == card_id).order_by(DebtPayment.paid_on.desc()).all()
 
 
 @router.get("/score")
