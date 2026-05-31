@@ -1,7 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Check, Zap, TrendingUp, Shield, BarChart3, Mail, RefreshCw } from 'lucide-react'
-import { signInWithPopup } from 'firebase/auth'
+import {
+  signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  updateProfile,
+} from 'firebase/auth'
 import toast from 'react-hot-toast'
 import api from '../api/axios'
 import { auth, googleProvider } from '../firebase'
@@ -223,35 +229,65 @@ function GoogleButton({ onClick, disabled }) {
 /* ── Sign In Form ── */
 function SignInForm({ onSwitchTab }) {
   const navigate = useNavigate()
-  const { setUser, setToken, setAvatar } = useStore()
+  const { setUser, setToken } = useStore()
   const { signInWithGoogle, googleLoading } = useGoogleAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [demoLoading, setDemoLoading] = useState(false)
-
-  const doLogin = async (loginEmail, loginPassword) => {
-    const res = await api.post('/auth/login', { email: loginEmail, password: loginPassword })
-    setAvatar(null)
-    setToken(res.data.access_token)
-    setUser(res.data.user)
-    return res.data.user
-  }
+  const [verifyEmail, setVerifyEmail] = useState(null)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!email || !password) {
-      toast.error('Please fill in all fields')
-      return
-    }
+    if (!email || !password) return toast.error('Please fill in all fields')
     setLoading(true)
     try {
-      const user = await doLogin(email, password)
-      toast.success(`Welcome back, ${user.name}!`)
-      navigate('/dashboard')
+      // Step 1: Try Firebase sign-in (for users who registered via Firebase)
+      let fbCred = null
+      let useBackend = false
+      try {
+        fbCred = await signInWithEmailAndPassword(auth, email, password)
+      } catch (fbErr) {
+        // user-not-found / wrong-password / invalid-credential → user has no Firebase account
+        const legacyCodes = ['auth/user-not-found', 'auth/invalid-credential', 'auth/wrong-password']
+        if (legacyCodes.includes(fbErr.code)) {
+          useBackend = true
+        } else {
+          throw fbErr // real Firebase error (rate-limit, disabled, etc.)
+        }
+      }
+
+      if (fbCred) {
+        // Step 2a: Firebase auth succeeded — check email verification
+        await fbCred.user.reload()
+        if (!fbCred.user.emailVerified) {
+          setVerifyEmail(email) // show verification screen
+          return
+        }
+        // Step 2b: Verified — exchange Firebase ID token for FinSense JWT
+        const idToken = await fbCred.user.getIdToken(true)
+        const res = await api.post('/auth/google/firebase', { id_token: idToken })
+        setToken(res.data.access_token)
+        setUser(res.data.user)
+        toast.success(`Welcome back, ${res.data.user.name}!`)
+        navigate('/dashboard')
+      } else if (useBackend) {
+        // Step 2c: No Firebase account → fall back to legacy backend login (demo user, existing users)
+        const res = await api.post('/auth/login', { email, password })
+        setToken(res.data.access_token)
+        setUser(res.data.user)
+        toast.success(`Welcome back, ${res.data.user.name}!`)
+        navigate('/dashboard')
+      }
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Login failed')
+      if (err.code === 'auth/too-many-requests') {
+        toast.error('Too many sign-in attempts. Please try again later.')
+      } else if (err.code === 'auth/user-disabled') {
+        toast.error('This account has been disabled.')
+      } else {
+        toast.error(err.response?.data?.detail || 'Invalid email or password')
+      }
     } finally {
       setLoading(false)
     }
@@ -260,14 +296,20 @@ function SignInForm({ onSwitchTab }) {
   const handleDemoLogin = async () => {
     setDemoLoading(true)
     try {
-      const user = await doLogin(DEMO_EMAIL, DEMO_PASSWORD)
-      toast.success(`Demo mode — welcome, ${user.name}!`)
+      const res = await api.post('/auth/login', { email: DEMO_EMAIL, password: DEMO_PASSWORD })
+      setToken(res.data.access_token)
+      setUser(res.data.user)
+      toast.success(`Demo mode — welcome, ${res.data.user.name}!`)
       navigate('/dashboard')
     } catch {
       toast.error('Demo login failed — please try again')
     } finally {
       setDemoLoading(false)
     }
+  }
+
+  if (verifyEmail) {
+    return <EmailVerificationScreen email={verifyEmail} onSwitchTab={onSwitchTab} />
   }
 
   const inputCls = "w-full px-4 py-3 rounded-xl text-sm border focus:outline-none transition-colors"
@@ -369,36 +411,54 @@ function SignInForm({ onSwitchTab }) {
   )
 }
 
-/* ── Email Verification Screen ── */
+/* ── Email Verification Screen (Firebase-backed) ── */
 function EmailVerificationScreen({ email, onSwitchTab }) {
   const navigate = useNavigate()
   const { setUser, setToken } = useStore()
   const [resending, setResending] = useState(false)
   const [resent, setResent] = useState(false)
+  const [checking, setChecking] = useState(false)
 
   const handleResend = async () => {
+    const fbUser = auth.currentUser
+    if (!fbUser) return toast.error('Session expired — please sign in again.')
     setResending(true)
+    setResent(false)
     try {
-      await api.post('/auth/resend-verification', { email })
+      await sendEmailVerification(fbUser)
       setResent(true)
-      toast.success('Verification email resent!')
-    } catch {
-      toast.error('Could not resend email. Try again shortly.')
+      toast.success('Verification email sent!')
+    } catch (err) {
+      if (err.code === 'auth/too-many-requests') {
+        toast.error('Too many requests. Please wait a few minutes and try again.')
+      } else {
+        toast.error('Could not send verification email. Try again shortly.')
+      }
     } finally {
       setResending(false)
     }
   }
 
-  const handleContinue = async () => {
+  const handleCheckVerified = async () => {
+    const fbUser = auth.currentUser
+    if (!fbUser) return toast.error('Session expired — please sign in again.')
+    setChecking(true)
     try {
-      const res = await api.post('/auth/login-unverified', { email })
-      if (res.data?.access_token) {
+      await fbUser.reload()
+      if (fbUser.emailVerified) {
+        const idToken = await fbUser.getIdToken(true)
+        const res = await api.post('/auth/google/firebase', { id_token: idToken })
         setToken(res.data.access_token)
         setUser(res.data.user)
+        toast.success(`Email verified! Welcome, ${res.data.user.name}!`)
         navigate('/dashboard')
+      } else {
+        toast.error('Email not yet verified. Check your inbox and click the link.')
       }
     } catch {
-      navigate('/dashboard')
+      toast.error('Verification check failed. Please try again.')
+    } finally {
+      setChecking(false)
     }
   }
 
@@ -411,49 +471,51 @@ function EmailVerificationScreen({ email, onSwitchTab }) {
         <Mail size={28} style={{ color: '#2AB5A0' }} />
       </div>
       <div>
-        <h2 className="text-xl font-bold mb-2" style={{ color: '#191c1e' }}>Check your email</h2>
-        <p className="text-sm" style={{ color: '#8BA8C8' }}>
-          We sent a verification link to
-        </p>
+        <h2 className="text-xl font-bold mb-2" style={{ color: '#191c1e' }}>Verify your email</h2>
+        <p className="text-sm" style={{ color: '#8BA8C8' }}>We sent a verification link to</p>
         <p className="text-sm font-semibold mt-1" style={{ color: '#191c1e' }}>{email}</p>
         <p className="text-xs mt-3" style={{ color: '#8BA8C8' }}>
-          Click the link in the email to activate your account.
+          Click the link in the email to activate your account. Check your spam folder if you don't see it.
         </p>
       </div>
 
+      {/* Primary: check if verified */}
+      <button
+        type="button"
+        onClick={handleCheckVerified}
+        disabled={checking}
+        className="w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+        style={{ backgroundColor: '#2AB5A0', color: '#ffffff', opacity: checking ? 0.7 : 1 }}
+      >
+        {checking
+          ? <><RefreshCw size={14} className="animate-spin" /> Checking…</>
+          : "I've verified my email →"}
+      </button>
+
+      {/* Secondary: resend */}
       <button
         type="button"
         onClick={handleResend}
         disabled={resending || resent}
         className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all"
         style={{
-          backgroundColor: resent ? 'rgba(42,181,160,0.1)' : 'transparent',
+          backgroundColor: resent ? 'rgba(42,181,160,0.08)' : 'transparent',
           border: '1px solid rgba(42,181,160,0.3)',
-          color: resent ? '#2AB5A0' : '#2AB5A0',
+          color: '#2AB5A0',
           opacity: resending ? 0.7 : 1,
         }}
       >
-        {resending ? <><RefreshCw size={14} className="animate-spin" /> Resending...</> : resent ? <><Check size={14} /> Email resent</> : 'Resend verification email'}
-      </button>
-
-      <button
-        type="button"
-        onClick={handleContinue}
-        className="w-full py-3 rounded-xl text-sm font-semibold transition-all"
-        style={{ backgroundColor: '#2AB5A0', color: '#ffffff' }}
-      >
-        Continue to dashboard →
+        {resending
+          ? <><RefreshCw size={14} className="animate-spin" /> Sending…</>
+          : resent
+          ? <><Check size={14} /> Email sent</>
+          : 'Resend verification email'}
       </button>
 
       <p className="text-center text-sm" style={{ color: '#8BA8C8' }}>
-        Already have an account?{' '}
-        <button
-          type="button"
-          onClick={onSwitchTab}
-          className="font-semibold"
-          style={{ color: '#2AB5A0' }}
-        >
-          Sign in
+        Wrong account?{' '}
+        <button type="button" onClick={onSwitchTab} className="font-semibold" style={{ color: '#2AB5A0' }}>
+          Sign in with a different account
         </button>
       </p>
     </div>
@@ -462,9 +524,8 @@ function EmailVerificationScreen({ email, onSwitchTab }) {
 
 /* ── Sign Up Form ── */
 function SignUpForm({ onSwitchTab }) {
-  const navigate = useNavigate()
-  const { setUser, setToken, setAvatar } = useStore()
   const { signInWithGoogle, googleLoading } = useGoogleAuth()
+  const navigate = useNavigate()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -473,45 +534,33 @@ function SignUpForm({ onSwitchTab }) {
   const [loading, setLoading] = useState(false)
   const [demoLoading, setDemoLoading] = useState(false)
   const [verifyEmail, setVerifyEmail] = useState(null)
-
-  const doLogin = async (loginEmail, loginPassword) => {
-    const res = await api.post('/auth/login', { email: loginEmail, password: loginPassword })
-    setAvatar(null)
-    setToken(res.data.access_token)
-    setUser(res.data.user)
-    return res.data.user
-  }
+  const { setUser, setToken } = useStore()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!name || !email || !password) {
-      toast.error('Please fill in all fields')
-      return
-    }
-    if (password !== confirm) {
-      toast.error('Passwords do not match')
-      return
-    }
-    if (password.length < 6) {
-      toast.error('Password must be at least 6 characters')
-      return
-    }
+    if (!name || !email || !password) return toast.error('Please fill in all fields')
+    if (password !== confirm) return toast.error('Passwords do not match')
+    if (password.length < 6) return toast.error('Password must be at least 6 characters')
     setLoading(true)
     try {
-      const res = await api.post('/auth/register', { name, email, password, mode: 'earner' })
-      if (res.data?.needs_verification || res.data?.email_sent) {
-        setVerifyEmail(email)
-      } else if (res.data?.access_token) {
-        setAvatar(null)
-        setToken(res.data.access_token)
-        setUser(res.data.user)
-        toast.success('Account created! Welcome to FinSense.')
-        navigate('/dashboard')
-      } else {
-        setVerifyEmail(email)
-      }
+      // Create Firebase user with email/password
+      const cred = await createUserWithEmailAndPassword(auth, email, password)
+      // Persist display name on the Firebase user profile
+      await updateProfile(cred.user, { displayName: name })
+      // Send Firebase verification email
+      await sendEmailVerification(cred.user)
+      setVerifyEmail(email)
+      toast.success('Verification email sent! Check your inbox.')
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Registration failed')
+      if (err.code === 'auth/email-already-in-use') {
+        toast.error('Email already registered. Try signing in instead.')
+      } else if (err.code === 'auth/weak-password') {
+        toast.error('Password must be at least 6 characters.')
+      } else if (err.code === 'auth/invalid-email') {
+        toast.error('Invalid email address.')
+      } else {
+        toast.error('Registration failed. Please try again.')
+      }
     } finally {
       setLoading(false)
     }
@@ -520,8 +569,10 @@ function SignUpForm({ onSwitchTab }) {
   const handleDemoLogin = async () => {
     setDemoLoading(true)
     try {
-      const user = await doLogin(DEMO_EMAIL, DEMO_PASSWORD)
-      toast.success(`Demo mode — welcome, ${user.name}!`)
+      const res = await api.post('/auth/login', { email: DEMO_EMAIL, password: DEMO_PASSWORD })
+      setToken(res.data.access_token)
+      setUser(res.data.user)
+      toast.success(`Demo mode — welcome, ${res.data.user.name}!`)
       navigate('/dashboard')
     } catch {
       toast.error('Demo login failed — please try again')

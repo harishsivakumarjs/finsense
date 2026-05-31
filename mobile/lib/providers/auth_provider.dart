@@ -11,13 +11,27 @@ class AuthState {
   final UserModel? user;
   final bool isAuthenticated;
   final bool isLoading;
+  final bool isPendingVerification;
 
-  const AuthState({this.user, this.isAuthenticated = false, this.isLoading = true});
+  const AuthState({
+    this.user,
+    this.isAuthenticated = false,
+    this.isLoading = true,
+    this.isPendingVerification = false,
+  });
 
-  AuthState copyWith({UserModel? user, bool? isAuthenticated, bool? isLoading}) => AuthState(
+  AuthState copyWith({
+    UserModel? user,
+    bool? isAuthenticated,
+    bool? isLoading,
+    bool? isPendingVerification,
+  }) =>
+      AuthState(
         user: user ?? this.user,
         isAuthenticated: isAuthenticated ?? this.isAuthenticated,
         isLoading: isLoading ?? this.isLoading,
+        isPendingVerification:
+            isPendingVerification ?? this.isPendingVerification,
       );
 }
 
@@ -35,33 +49,75 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     }
   }
 
+  // ── Email/Password (Firebase-first) ──────────────────────────────────────
+
   Future<void> login(String email, String password) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      final result = await ref.read(authServiceProvider).login(email, password);
-      return AuthState(user: result.user, isAuthenticated: true, isLoading: false);
+      try {
+        final result =
+            await ref.read(authServiceProvider).login(email, password);
+        return AuthState(
+            user: result.user, isAuthenticated: true, isLoading: false);
+      } on EmailNotVerifiedException {
+        return const AuthState(
+            isLoading: false, isPendingVerification: true);
+      }
     });
   }
 
-  Future<void> register({required String name, required String email, required String password, required String mode}) async {
+  /// Creates a Firebase user, sends a verification email, and sets
+  /// [isPendingVerification] = true. No DB record is created until the user
+  /// verifies and calls [checkEmailVerified].
+  Future<void> registerWithFirebase({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      final result = await ref.read(authServiceProvider).register(name: name, email: email, password: password, mode: mode);
-      return AuthState(user: result.user, isAuthenticated: true, isLoading: false);
+      try {
+        await ref.read(authServiceProvider).registerWithFirebase(
+              name: name,
+              email: email,
+              password: password,
+            );
+      } on EmailNotVerifiedException {
+        return const AuthState(
+            isLoading: false, isPendingVerification: true);
+      }
+      return const AuthState(isLoading: false);
     });
   }
+
+  /// Reloads Firebase user and, if verified, exchanges token for FinSense JWT.
+  Future<void> checkEmailVerified() async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final result =
+          await ref.read(authServiceProvider).checkEmailVerified();
+      return AuthState(
+          user: result.user, isAuthenticated: true, isLoading: false);
+    });
+  }
+
+  // ── Google ────────────────────────────────────────────────────────────────
 
   Future<void> loginWithGoogle() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final result = await ref.read(authServiceProvider).signInWithGoogle();
-      return AuthState(user: result.user, isAuthenticated: true, isLoading: false);
+      return AuthState(
+          user: result.user, isAuthenticated: true, isLoading: false);
     });
   }
 
+  // ── Session ───────────────────────────────────────────────────────────────
+
   Future<void> logout() async {
     await ref.read(authServiceProvider).logout();
-    state = const AsyncData(AuthState(isAuthenticated: false, isLoading: false));
+    state =
+        const AsyncData(AuthState(isAuthenticated: false, isLoading: false));
   }
 
   Future<void> switchMode(String mode) async {
@@ -73,4 +129,5 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   }
 }
 
-final authProvider = AsyncNotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
+final authProvider =
+    AsyncNotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
