@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { User, Lock, Bell, Palette, Shield, LogOut, ChevronRight, Sun, Moon, Camera, Phone, Check, AlertTriangle, X } from 'lucide-react'
+import { User, Lock, Bell, Palette, Shield, LogOut, ChevronRight, Sun, Moon, Camera, Phone, AlertTriangle, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import api from '../api/axios'
@@ -240,8 +240,8 @@ export default function Settings() {
                           className="w-full px-4 py-2.5 rounded-lg text-sm focus:outline-none border pr-24"
                           style={{ backgroundColor:'var(--surface-container-low)', borderColor:'var(--outline-variant)', color:'var(--on-surface)', cursor:'default' }} />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor:'rgba(0,107,93,0.12)', color:'var(--positive)' }}>
-                          <Check size={10} /> VERIFIED
+                          style={{ backgroundColor:'rgba(212,147,42,0.12)', color:'#d4932a' }}>
+                          UNVERIFIED
                         </span>
                       </div>
                     </div>

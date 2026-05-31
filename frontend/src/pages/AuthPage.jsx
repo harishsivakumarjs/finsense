@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, Check, Zap, TrendingUp, Shield, BarChart3, Mail, RefreshCw } from 'lucide-react'
+import { Eye, EyeOff, Check, Zap, TrendingUp, Shield, BarChart3 } from 'lucide-react'
 import { signInWithPopup } from 'firebase/auth'
 import toast from 'react-hot-toast'
 import api from '../api/axios'
@@ -77,6 +77,19 @@ function LeftPanel() {
 }
 
 /* ── Shared Google Sign-In hook — Firebase popup only ── */
+const FIREBASE_ERROR_MESSAGES = {
+  'auth/unauthorized-domain':
+    'This domain is not authorized for Google Sign-In. Add it to Firebase Console → Authentication → Authorized Domains.',
+  'auth/operation-not-allowed':
+    'Google Sign-In is not enabled. Enable it in Firebase Console → Authentication → Sign-in method.',
+  'auth/popup-blocked':
+    'Your browser blocked the sign-in popup. Allow popups for this site and try again.',
+  'auth/network-request-failed':
+    'Network error. Check your internet connection and try again.',
+  'auth/internal-error':
+    'Google Sign-In encountered an internal error. Please try again.',
+}
+
 function useGoogleAuth() {
   const navigate = useNavigate()
   const { setUser, setToken } = useStore()
@@ -93,8 +106,15 @@ function useGoogleAuth() {
       toast.success(`Welcome, ${res.data.user.name}!`)
       navigate('/dashboard')
     } catch (err) {
+      // User deliberately closed the popup — silently ignore
       if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') return
-      toast.error(err?.response?.data?.detail || 'Google sign-in failed. Please try again.')
+      // Surface a helpful message for known Firebase error codes
+      const message =
+        err?.response?.data?.detail ||           // backend error (Axios)
+        FIREBASE_ERROR_MESSAGES[err?.code] ||    // known Firebase error
+        err?.message ||                          // raw error message
+        'Google sign-in failed. Please try again.'
+      toast.error(message, { duration: 6000 })
     } finally {
       setGoogleLoading(false)
     }
@@ -128,71 +148,6 @@ function GoogleButton({ onClick, disabled }) {
   )
 }
 
-/* ── Email Verification Pending Screen ── */
-function EmailVerificationScreen({ email, onSwitchTab }) {
-  const [resending, setResending] = useState(false)
-  const [resent, setResent] = useState(false)
-
-  const handleResend = async () => {
-    setResending(true)
-    setResent(false)
-    try {
-      const res = await api.post('/auth/resend-verification', { email })
-      setResent(true)
-      toast.success(res.data?.message || 'Verification email sent!')
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Could not send verification email. Try again shortly.')
-    } finally {
-      setResending(false)
-    }
-  }
-
-  return (
-    <div className="text-center space-y-5">
-      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto"
-        style={{ backgroundColor: 'rgba(42,181,160,0.1)', border: '1px solid rgba(42,181,160,0.2)' }}>
-        <Mail size={28} style={{ color: '#2AB5A0' }} />
-      </div>
-      <div>
-        <h2 className="text-xl font-bold mb-2" style={{ color: '#191c1e' }}>Check your email</h2>
-        <p className="text-sm" style={{ color: '#8BA8C8' }}>We sent a verification link to</p>
-        <p className="text-sm font-semibold mt-1" style={{ color: '#191c1e' }}>{email}</p>
-        <p className="text-xs mt-3 leading-relaxed" style={{ color: '#8BA8C8' }}>
-          Click the link in the email to activate your account.
-          Check your spam folder if you don't see it.
-        </p>
-      </div>
-
-      {/* Primary: go verify then come back to sign in */}
-      <button type="button" onClick={() => onSwitchTab()}
-        className="w-full py-3 rounded-xl text-sm font-semibold transition-all"
-        style={{ backgroundColor: '#2AB5A0', color: '#ffffff' }}>
-        I've verified — Sign In →
-      </button>
-
-      {/* Secondary: resend */}
-      <button type="button" onClick={handleResend} disabled={resending || resent}
-        className="w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all"
-        style={{ backgroundColor: resent ? 'rgba(42,181,160,0.08)' : 'transparent',
-                 border: '1px solid rgba(42,181,160,0.3)', color: '#2AB5A0',
-                 opacity: resending ? 0.7 : 1 }}>
-        {resending
-          ? <><RefreshCw size={14} className="animate-spin" /> Sending…</>
-          : resent
-          ? <><Check size={14} /> Email sent</>
-          : 'Resend verification email'}
-      </button>
-
-      <p className="text-center text-sm" style={{ color: '#8BA8C8' }}>
-        Wrong account?{' '}
-        <button type="button" onClick={onSwitchTab} className="font-semibold" style={{ color: '#2AB5A0' }}>
-          Back to Sign In
-        </button>
-      </p>
-    </div>
-  )
-}
-
 /* ── Sign In Form ── */
 function SignInForm({ onSwitchTab }) {
   const navigate = useNavigate()
@@ -203,8 +158,6 @@ function SignInForm({ onSwitchTab }) {
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [demoLoading, setDemoLoading] = useState(false)
-  // When backend returns 403 (unverified), show the verification screen inline
-  const [pendingVerificationEmail, setPendingVerificationEmail] = useState(null)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -217,12 +170,7 @@ function SignInForm({ onSwitchTab }) {
       toast.success(`Welcome back, ${res.data.user.name}!`)
       navigate('/dashboard')
     } catch (err) {
-      if (err.response?.status === 403) {
-        // Email not verified — surface the verification screen
-        setPendingVerificationEmail(email)
-      } else {
-        toast.error(err.response?.data?.detail || 'Invalid email or password')
-      }
+      toast.error(err.response?.data?.detail || 'Invalid email or password')
     } finally {
       setLoading(false)
     }
@@ -241,16 +189,6 @@ function SignInForm({ onSwitchTab }) {
     } finally {
       setDemoLoading(false)
     }
-  }
-
-  // Show verification pending state (when user tries to log in but hasn't verified)
-  if (pendingVerificationEmail) {
-    return (
-      <EmailVerificationScreen
-        email={pendingVerificationEmail}
-        onSwitchTab={() => setPendingVerificationEmail(null)}
-      />
-    )
   }
 
   const inputCls = "w-full px-4 py-3 rounded-xl text-sm border focus:outline-none transition-colors"
@@ -321,8 +259,6 @@ function SignUpForm({ onSwitchTab }) {
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [demoLoading, setDemoLoading] = useState(false)
-  // Set after registration — shows the verification pending screen
-  const [verifyEmail, setVerifyEmail] = useState(null)
   const { setUser, setToken } = useStore()
   const navigate = useNavigate()
 
@@ -333,10 +269,11 @@ function SignUpForm({ onSwitchTab }) {
     if (password.length < 6) return toast.error('Password must be at least 6 characters')
     setLoading(true)
     try {
-      // Backend creates user, sends verification email, returns message (no JWT)
       const res = await api.post('/auth/register', { name, email, password, mode: 'earner' })
-      setVerifyEmail(email)
-      toast.success(res.data?.message || 'Account created! Please check your email.')
+      setToken(res.data.access_token)
+      setUser(res.data.user)
+      toast.success(`Welcome to FinSense, ${res.data.user.name}!`)
+      navigate('/dashboard')
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Registration failed. Please try again.')
     } finally {
@@ -357,11 +294,6 @@ function SignUpForm({ onSwitchTab }) {
     } finally {
       setDemoLoading(false)
     }
-  }
-
-  // Show verification screen after successful registration
-  if (verifyEmail) {
-    return <EmailVerificationScreen email={verifyEmail} onSwitchTab={onSwitchTab} />
   }
 
   const inputCls = "w-full px-4 py-3 rounded-xl text-sm border focus:outline-none transition-colors"

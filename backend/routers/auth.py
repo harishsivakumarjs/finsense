@@ -21,7 +21,7 @@ from schemas.auth import (
     UserCreate, UserLogin, UserOut, Token, ModeUpdate, ProfileUpdate,
     PasswordUpdate, FirebaseAuthPayload, RegisterResponse, ResendVerificationPayload,
 )
-from services.email_service import send_verification_email
+from services.email_service import send_verification_email, is_email_configured  # noqa: F401 — kept for future email verification
 
 load_dotenv()
 
@@ -84,20 +84,17 @@ def get_current_user(
 
 # ── Email / Password endpoints ────────────────────────────────────────────────
 
-@router.post("/register", response_model=RegisterResponse, status_code=201)
+@router.post("/register", response_model=Token, status_code=201)
 def register(
     payload: UserCreate,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """
-    Create a new email/password account.
-    Returns a message only — no JWT is issued until the email is verified.
+    Create a new email/password account and return a JWT immediately.
+    Email verification is not required (reserved for future implementation).
     """
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
-
-    token, expires_at = _generate_verification_token()
 
     user = User(
         email=payload.email,
@@ -105,20 +102,13 @@ def register(
         name=payload.name,
         mode=payload.mode,
         email_verified=False,
-        verification_token=token,
-        verification_token_expires_at=expires_at,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    verification_url = f"{FRONTEND_URL}/verify-email?token={token}"
-    background_tasks.add_task(send_verification_email, user.email, user.name, verification_url)
-
-    return RegisterResponse(
-        message="Account created successfully. Please verify your email before signing in.",
-        email=user.email,
-    )
+    access_token = create_access_token(str(user.id), user.email)
+    return Token(access_token=access_token, user=UserOut.model_validate(user))
 
 
 @router.post("/login", response_model=Token)
@@ -126,12 +116,6 @@ def login(payload: UserLogin, response: Response, db: Session = Depends(get_db))
     user = db.query(User).filter(User.email == payload.email).first()
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-
-    if not user.email_verified:
-        raise HTTPException(
-            status_code=403,
-            detail="Please verify your email before signing in. Check your inbox or request a new verification email.",
-        )
 
     token = create_access_token(str(user.id), user.email)
     response.set_cookie(
@@ -246,20 +230,14 @@ def google_firebase_login(payload: FirebaseAuthPayload, db: Session = Depends(ge
             name=name,
             photo=photo,
             mode="earner",
-            email_verified=True,  # Google accounts are auto-verified
+            email_verified=False,
         )
         db.add(user)
         db.commit()
         db.refresh(user)
     else:
-        changed = False
-        if not user.email_verified:
-            user.email_verified = True
-            changed = True
         if photo and not user.photo:
             user.photo = photo
-            changed = True
-        if changed:
             db.commit()
             db.refresh(user)
 

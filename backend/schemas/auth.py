@@ -46,6 +46,9 @@ class UserOut(BaseModel):
 class RegisterResponse(BaseModel):
     message: str
     email: str
+    # True when at least one email delivery method (Resend or SMTP) is configured.
+    # False means the verification URL was only logged to the server console.
+    email_sent: bool = True
 
 
 class ResendVerificationPayload(BaseModel):
