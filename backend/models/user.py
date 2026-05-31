@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Text, DateTime, Enum
+from sqlalchemy import Column, String, Text, DateTime, Boolean, Enum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from database import Base
@@ -17,6 +17,11 @@ class User(Base):
     photo = Column(Text, nullable=True)
     mode = Column(Enum("student", "earner", name="user_mode"), default="student", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Email verification
+    email_verified = Column(Boolean, nullable=False, default=False)
+    verification_token = Column(String(64), nullable=True)
+    verification_token_expires_at = Column(DateTime, nullable=True)
 
     income_entries = relationship("IncomeEntry", back_populates="user", cascade="all, delete-orphan")
     expenses = relationship("Expense", back_populates="user", cascade="all, delete-orphan")

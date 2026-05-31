@@ -37,9 +37,19 @@ class UserOut(BaseModel):
     mobile: Optional[str] = None
     photo: Optional[str] = None
     mode: str
+    email_verified: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class RegisterResponse(BaseModel):
+    message: str
+    email: str
+
+
+class ResendVerificationPayload(BaseModel):
+    email: EmailStr
 
 
 class Token(BaseModel):

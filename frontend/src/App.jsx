@@ -20,6 +20,7 @@ import Simulator from './pages/Simulator'
 import Insurance from './pages/Insurance'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
+import VerifyEmail from './pages/VerifyEmail'
 
 // Layout
 import Sidebar from './components/Sidebar'
@@ -82,9 +83,10 @@ export default function App() {
       />
 
       <Routes>
-        <Route path="/login"    element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/"         element={<Navigate to="/dashboard" replace />} />
+        <Route path="/login"        element={<Login />} />
+        <Route path="/register"     element={<Register />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/"             element={<Navigate to="/dashboard" replace />} />
 
         <Route path="/dashboard"  element={<PrivateRoute title="Dashboard"><Dashboard /></PrivateRoute>} />
         <Route path="/income"     element={<PrivateRoute title="Income"><Income /></PrivateRoute>} />

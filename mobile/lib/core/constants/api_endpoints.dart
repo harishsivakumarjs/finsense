@@ -7,7 +7,8 @@ class ApiEndpoints {
   static const logout          = '/auth/logout';
   static const me              = '/auth/me';
   static const mode            = '/auth/mode';
-  static const googleFirebase  = '/auth/google/firebase';
+  static const googleFirebase       = '/auth/google/firebase';
+  static const resendVerification   = '/auth/resend-verification';
 
   // Dashboard
   static const dashboard  = '/dashboard';

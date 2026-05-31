@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -6,9 +7,12 @@ import '../network/dio_client.dart';
 import '../models/user_model.dart';
 import '../core/constants/api_endpoints.dart';
 
-/// Thrown when a Firebase user exists but their email is not yet verified.
-class EmailNotVerifiedException implements Exception {
-  const EmailNotVerifiedException();
+/// Thrown after registration when the user must verify their email before
+/// they can log in. Contains the email address so the UI can display it.
+class EmailVerificationPendingException implements Exception {
+  final String email;
+  final String message;
+  const EmailVerificationPendingException({required this.email, required this.message});
 }
 
 class AuthService {
@@ -16,7 +20,6 @@ class AuthService {
   final _storage = const FlutterSecureStorage();
   final _firebaseAuth = FirebaseAuth.instance;
   final _googleSignIn = GoogleSignIn(
-    // Web client ID from google-services.json (client_type: 3)
     serverClientId:
         '604608810400-ti1fvo9akhf3e3u601uku8il3va4cg40.apps.googleusercontent.com',
   );
@@ -25,87 +28,61 @@ class AuthService {
 
   String get _jwtKey => dotenv.env['JWT_KEY'] ?? 'finsense_jwt_token';
 
-  // ── Email/Password Registration via Firebase ──────────────────────────────
+  // ── Email / Password (backend-only) ───────────────────────────────────────
 
-  /// Creates a Firebase user, sets their display name, and sends a
-  /// verification email. Always throws [EmailNotVerifiedException] because the
-  /// user must verify before they can access the app.
-  Future<void> registerWithFirebase({
+  /// Registers a new user via the backend.
+  /// On success, the backend sends a verification email and returns a message
+  /// (NOT a JWT). This method throws [EmailVerificationPendingException] so the
+  /// caller can show the "verify your email" screen.
+  Future<void> register({
     required String name,
     required String email,
     required String password,
+    required String mode,
   }) async {
-    final cred = await _firebaseAuth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-    await cred.user!.updateDisplayName(name);
-    await cred.user!.sendEmailVerification();
-    throw const EmailNotVerifiedException();
+    final res = await _dio.post(ApiEndpoints.register, data: {
+      'name': name,
+      'email': email,
+      'password': password,
+      'mode': mode,
+    });
+    final message = res.data['message'] as String? ??
+        'Account created. Please verify your email before signing in.';
+    throw EmailVerificationPendingException(email: email, message: message);
   }
 
-  // ── Email/Password Login (Firebase-first, backend fallback) ───────────────
-
+  /// Logs in via backend. Returns the JWT + user on success.
+  /// Throws [EmailVerificationPendingException] when the backend returns 403
+  /// (account exists but email not verified).
   Future<({String token, UserModel user})> login(
       String email, String password) async {
-    User? fbUser;
-    bool useBackend = false;
-
     try {
-      final cred = await _firebaseAuth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-      fbUser = cred.user;
-    } on FirebaseAuthException catch (e) {
-      const legacyCodes = {
-        'user-not-found',
-        'wrong-password',
-        'invalid-credential',
-      };
-      if (legacyCodes.contains(e.code)) {
-        useBackend = true; // No Firebase account → try legacy backend
-      } else {
-        rethrow; // too-many-requests, user-disabled, etc.
+      final res = await _dio.post(ApiEndpoints.login, data: {
+        'email': email,
+        'password': password,
+      });
+      final token = res.data['access_token'] as String;
+      await _storage.write(key: _jwtKey, value: token);
+      final user =
+          UserModel.fromJson(res.data['user'] as Map<String, dynamic>);
+      return (token: token, user: user);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 403) {
+        final detail = e.response?.data?['detail'] as String? ??
+            'Please verify your email before signing in.';
+        throw EmailVerificationPendingException(
+            email: email, message: detail);
       }
+      rethrow;
     }
-
-    if (fbUser != null) {
-      // Reload to get the freshest emailVerified status
-      await fbUser.reload();
-      fbUser = _firebaseAuth.currentUser!;
-      if (!fbUser.emailVerified) throw const EmailNotVerifiedException();
-      // Exchange Firebase ID token for FinSense JWT
-      return await _exchangeFirebaseToken(fbUser);
-    }
-
-    if (useBackend) {
-      return await _legacyLogin(email, password);
-    }
-
-    throw Exception('Login failed');
   }
 
-  // ── Verification helpers ──────────────────────────────────────────────────
-
-  Future<void> resendVerificationEmail() async {
-    final user = _firebaseAuth.currentUser;
-    if (user == null) throw Exception('Not signed in. Please try again.');
-    await user.sendEmailVerification();
+  /// Requests a fresh verification email from the backend.
+  Future<void> resendVerificationEmail(String email) async {
+    await _dio.post(ApiEndpoints.resendVerification, data: {'email': email});
   }
 
-  /// Reloads the Firebase user and, if verified, exchanges their token for a
-  /// FinSense JWT. Throws if not yet verified.
-  Future<({String token, UserModel user})> checkEmailVerified() async {
-    var user = _firebaseAuth.currentUser;
-    if (user == null) throw Exception('Session expired. Please sign in again.');
-    await user.reload();
-    user = _firebaseAuth.currentUser!;
-    if (!user.emailVerified) throw Exception('Email not yet verified');
-    return await _exchangeFirebaseToken(user);
-  }
-
-  // ── Google Sign-In ────────────────────────────────────────────────────────
+  // ── Google Sign-In (Firebase) ─────────────────────────────────────────────
 
   Future<({String token, UserModel user})> signInWithGoogle() async {
     final googleUser = await _googleSignIn.signIn();
@@ -118,36 +95,20 @@ class AuthService {
     );
     final userCredential =
         await _firebaseAuth.signInWithCredential(credential);
-    return await _exchangeFirebaseToken(userCredential.user!);
-  }
+    final firebaseIdToken =
+        await userCredential.user!.getIdToken();
 
-  // ── Shared helpers ────────────────────────────────────────────────────────
-
-  Future<({String token, UserModel user})> _exchangeFirebaseToken(
-      User fbUser) async {
-    final idToken = await fbUser.getIdToken(true);
     final res = await _dio.post(ApiEndpoints.googleFirebase, data: {
-      'id_token': idToken,
+      'id_token': firebaseIdToken,
     });
     final token = res.data['access_token'] as String;
     await _storage.write(key: _jwtKey, value: token);
-    final user = UserModel.fromJson(res.data['user'] as Map<String, dynamic>);
+    final user =
+        UserModel.fromJson(res.data['user'] as Map<String, dynamic>);
     return (token: token, user: user);
   }
 
-  Future<({String token, UserModel user})> _legacyLogin(
-      String email, String password) async {
-    final res = await _dio.post(ApiEndpoints.login, data: {
-      'email': email,
-      'password': password,
-    });
-    final token = res.data['access_token'] as String;
-    await _storage.write(key: _jwtKey, value: token);
-    final user = UserModel.fromJson(res.data['user'] as Map<String, dynamic>);
-    return (token: token, user: user);
-  }
-
-  // ── Other ─────────────────────────────────────────────────────────────────
+  // ── Session ───────────────────────────────────────────────────────────────
 
   Future<UserModel> me() async {
     final res = await _dio.get(ApiEndpoints.me);

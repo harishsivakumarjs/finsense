@@ -3,6 +3,8 @@ import '../models/user_model.dart';
 import '../network/dio_client.dart';
 import '../services/auth_service.dart';
 
+export '../services/auth_service.dart' show EmailVerificationPendingException;
+
 final authServiceProvider = Provider<AuthService>((ref) {
   return AuthService(ref.watch(dioClientProvider));
 });
@@ -11,13 +13,19 @@ class AuthState {
   final UserModel? user;
   final bool isAuthenticated;
   final bool isLoading;
+  /// Set when the backend asks the user to verify their email.
   final bool isPendingVerification;
+  /// The email address waiting for verification (for UI display + resend).
+  final String? pendingEmail;
+  final String? pendingMessage;
 
   const AuthState({
     this.user,
     this.isAuthenticated = false,
     this.isLoading = true,
     this.isPendingVerification = false,
+    this.pendingEmail,
+    this.pendingMessage,
   });
 
   AuthState copyWith({
@@ -25,6 +33,8 @@ class AuthState {
     bool? isAuthenticated,
     bool? isLoading,
     bool? isPendingVerification,
+    String? pendingEmail,
+    String? pendingMessage,
   }) =>
       AuthState(
         user: user ?? this.user,
@@ -32,6 +42,8 @@ class AuthState {
         isLoading: isLoading ?? this.isLoading,
         isPendingVerification:
             isPendingVerification ?? this.isPendingVerification,
+        pendingEmail: pendingEmail ?? this.pendingEmail,
+        pendingMessage: pendingMessage ?? this.pendingMessage,
       );
 }
 
@@ -49,8 +61,38 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     }
   }
 
-  // ── Email/Password (Firebase-first) ──────────────────────────────────────
+  // ── Email / Password ──────────────────────────────────────────────────────
 
+  /// Registers via backend. On success sets isPendingVerification = true.
+  Future<void> register({
+    required String name,
+    required String email,
+    required String password,
+    required String mode,
+  }) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      try {
+        await ref.read(authServiceProvider).register(
+              name: name,
+              email: email,
+              password: password,
+              mode: mode,
+            );
+      } on EmailVerificationPendingException catch (e) {
+        return AuthState(
+          isLoading: false,
+          isPendingVerification: true,
+          pendingEmail: e.email,
+          pendingMessage: e.message,
+        );
+      }
+      return const AuthState(isLoading: false);
+    });
+  }
+
+  /// Logs in via backend. Propagates EmailVerificationPendingException as
+  /// isPendingVerification state instead of an error.
   Future<void> login(String email, String password) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
@@ -59,45 +101,14 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
             await ref.read(authServiceProvider).login(email, password);
         return AuthState(
             user: result.user, isAuthenticated: true, isLoading: false);
-      } on EmailNotVerifiedException {
-        return const AuthState(
-            isLoading: false, isPendingVerification: true);
+      } on EmailVerificationPendingException catch (e) {
+        return AuthState(
+          isLoading: false,
+          isPendingVerification: true,
+          pendingEmail: e.email,
+          pendingMessage: e.message,
+        );
       }
-    });
-  }
-
-  /// Creates a Firebase user, sends a verification email, and sets
-  /// [isPendingVerification] = true. No DB record is created until the user
-  /// verifies and calls [checkEmailVerified].
-  Future<void> registerWithFirebase({
-    required String name,
-    required String email,
-    required String password,
-  }) async {
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      try {
-        await ref.read(authServiceProvider).registerWithFirebase(
-              name: name,
-              email: email,
-              password: password,
-            );
-      } on EmailNotVerifiedException {
-        return const AuthState(
-            isLoading: false, isPendingVerification: true);
-      }
-      return const AuthState(isLoading: false);
-    });
-  }
-
-  /// Reloads Firebase user and, if verified, exchanges token for FinSense JWT.
-  Future<void> checkEmailVerified() async {
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      final result =
-          await ref.read(authServiceProvider).checkEmailVerified();
-      return AuthState(
-          user: result.user, isAuthenticated: true, isLoading: false);
     });
   }
 
@@ -123,9 +134,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   Future<void> switchMode(String mode) async {
     final user = await ref.read(authServiceProvider).switchMode(mode);
     final current = state.value;
-    if (current != null) {
-      state = AsyncData(current.copyWith(user: user));
-    }
+    if (current != null) state = AsyncData(current.copyWith(user: user));
   }
 }
 

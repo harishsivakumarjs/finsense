@@ -1,9 +1,10 @@
 import os
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
@@ -16,21 +17,28 @@ from models import (
     Investment, CreatorIncome, FriendLedger, NetWorthSnapshot, Goal,
     TaxDeduction, AdvanceTaxPayment, InsurancePolicy,
 )
-from schemas.auth import UserCreate, UserLogin, UserOut, Token, ModeUpdate, ProfileUpdate, PasswordUpdate, FirebaseAuthPayload
+from schemas.auth import (
+    UserCreate, UserLogin, UserOut, Token, ModeUpdate, ProfileUpdate,
+    PasswordUpdate, FirebaseAuthPayload, RegisterResponse, ResendVerificationPayload,
+)
+from services.email_service import send_verification_email
 
 load_dotenv()
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-FIREBASE_WEB_API_KEY = os.getenv("FIREBASE_WEB_API_KEY", "AIzaSyAX3Iw8m-ax9o5hbLXlXcoz8hvbWRloQqI")
-
 JWT_SECRET = os.getenv("JWT_SECRET", "super-secret-key-change-in-production-min-32")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
+FIREBASE_WEB_API_KEY = os.getenv("FIREBASE_WEB_API_KEY", "AIzaSyAX3Iw8m-ax9o5hbLXlXcoz8hvbWRloQqI")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+VERIFICATION_TOKEN_TTL_HOURS = 24
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
 
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -44,6 +52,13 @@ def create_access_token(user_id: str, email: str) -> str:
     expire = datetime.utcnow() + timedelta(hours=JWT_EXPIRE_HOURS)
     payload = {"sub": str(user_id), "email": email, "exp": expire}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def _generate_verification_token() -> tuple[str, datetime]:
+    """Return (token, expires_at) pair."""
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + timedelta(hours=VERIFICATION_TOKEN_TTL_HOURS)
+    return token, expires_at
 
 
 def get_current_user(
@@ -67,24 +82,43 @@ def get_current_user(
     return user
 
 
-@router.post("/register", response_model=Token, status_code=201)
-def register(payload: UserCreate, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.email == payload.email).first()
-    if existing:
+# ── Email / Password endpoints ────────────────────────────────────────────────
+
+@router.post("/register", response_model=RegisterResponse, status_code=201)
+def register(
+    payload: UserCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Create a new email/password account.
+    Returns a message only — no JWT is issued until the email is verified.
+    """
+    if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    token, expires_at = _generate_verification_token()
 
     user = User(
         email=payload.email,
         password_hash=hash_password(payload.password),
         name=payload.name,
         mode=payload.mode,
+        email_verified=False,
+        verification_token=token,
+        verification_token_expires_at=expires_at,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    token = create_access_token(str(user.id), user.email)
-    return Token(access_token=token, user=UserOut.model_validate(user))
+    verification_url = f"{FRONTEND_URL}/verify-email?token={token}"
+    background_tasks.add_task(send_verification_email, user.email, user.name, verification_url)
+
+    return RegisterResponse(
+        message="Account created successfully. Please verify your email before signing in.",
+        email=user.email,
+    )
 
 
 @router.post("/login", response_model=Token)
@@ -92,6 +126,12 @@ def login(payload: UserLogin, response: Response, db: Session = Depends(get_db))
     user = db.query(User).filter(User.email == payload.email).first()
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=403,
+            detail="Please verify your email before signing in. Check your inbox or request a new verification email.",
+        )
 
     token = create_access_token(str(user.id), user.email)
     response.set_cookie(
@@ -104,15 +144,75 @@ def login(payload: UserLogin, response: Response, db: Session = Depends(get_db))
     return Token(access_token=token, user=UserOut.model_validate(user))
 
 
-@router.post("/logout")
-def logout(response: Response):
-    response.delete_cookie("access_token")
-    return {"message": "Logged out successfully"}
+@router.get("/verify-email")
+def verify_email(token: str, db: Session = Depends(get_db)):
+    """
+    Called when the user clicks the link in the verification email.
+    Marks the account as verified and clears the token.
+    """
+    user = db.query(User).filter(User.verification_token == token).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification link.")
 
+    if user.email_verified:
+        return {"message": "Email already verified. You can sign in."}
+
+    if (
+        user.verification_token_expires_at is not None
+        and user.verification_token_expires_at < datetime.utcnow()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="This verification link has expired. Please request a new one.",
+        )
+
+    user.email_verified = True
+    user.verification_token = None
+    user.verification_token_expires_at = None
+    db.commit()
+
+    return {"message": "Email verified successfully! You can now sign in to FinSense."}
+
+
+@router.post("/resend-verification")
+def resend_verification(
+    payload: ResendVerificationPayload,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a fresh token and resend the verification email.
+    Always returns a vague success message to avoid email enumeration.
+    """
+    user = db.query(User).filter(User.email == payload.email).first()
+
+    # Vague response when email not found (don't reveal account existence)
+    if not user:
+        return {"message": "If that email is registered, a verification link has been sent."}
+
+    if user.email_verified:
+        return {"message": "Email is already verified. You can sign in."}
+
+    token, expires_at = _generate_verification_token()
+    user.verification_token = token
+    user.verification_token_expires_at = expires_at
+    db.commit()
+
+    verification_url = f"{FRONTEND_URL}/verify-email?token={token}"
+    background_tasks.add_task(send_verification_email, user.email, user.name, verification_url)
+
+    return {"message": "Verification email sent. Check your inbox."}
+
+
+# ── Google / Firebase endpoint ────────────────────────────────────────────────
 
 @router.post("/google/firebase", response_model=Token)
 def google_firebase_login(payload: FirebaseAuthPayload, db: Session = Depends(get_db)):
-    """Verify a Firebase ID token and return a FinSense JWT. Creates the user if they don't exist."""
+    """
+    Verify a Firebase ID token (from Google Sign-In) and return a FinSense JWT.
+    Google accounts are always considered email-verified.
+    Creates the DB user on first sign-in.
+    """
     import httpx as _httpx
     try:
         resp = _httpx.post(
@@ -146,23 +246,41 @@ def google_firebase_login(payload: FirebaseAuthPayload, db: Session = Depends(ge
             name=name,
             photo=photo,
             mode="earner",
+            email_verified=True,  # Google accounts are auto-verified
         )
         db.add(user)
         db.commit()
         db.refresh(user)
-    elif photo and not user.photo:
-        user.photo = photo
-        db.commit()
-        db.refresh(user)
+    else:
+        changed = False
+        if not user.email_verified:
+            user.email_verified = True
+            changed = True
+        if photo and not user.photo:
+            user.photo = photo
+            changed = True
+        if changed:
+            db.commit()
+            db.refresh(user)
 
     token = create_access_token(str(user.id), user.email)
     return Token(access_token=token, user=UserOut.model_validate(user))
+
+
+# ── Session endpoints ─────────────────────────────────────────────────────────
+
+@router.post("/logout")
+def logout(response: Response):
+    response.delete_cookie("access_token")
+    return {"message": "Logged out successfully"}
 
 
 @router.get("/me", response_model=UserOut)
 def get_me(current_user: User = Depends(get_current_user)):
     return UserOut.model_validate(current_user)
 
+
+# ── Profile endpoints ─────────────────────────────────────────────────────────
 
 @router.put("/mode", response_model=UserOut)
 def update_mode(
@@ -203,6 +321,8 @@ def update_password(
     db.commit()
     return {"message": "Password updated successfully"}
 
+
+# ── Account management ────────────────────────────────────────────────────────
 
 @router.delete("/data")
 def clear_all_data(

@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/fs_color_scheme.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/auth_service.dart';
 import '../../widgets/common/fs_text_field.dart';
 import '../../widgets/common/fs_button.dart';
 
@@ -38,11 +36,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   bool _loading = false;
 
-  // Email verification state
-  bool _showVerification = false;
+  // Verification
   bool _resending = false;
   bool _resent = false;
-  bool _checking = false;
 
   @override
   void initState() {
@@ -73,14 +69,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           .login(_email.text.trim(), _pass.text);
       if (!mounted) return;
       final s = ref.read(authProvider).value;
-      if (s?.isPendingVerification == true) {
-        setState(() => _showVerification = true);
-      } else if (s?.isAuthenticated == true) {
+      if (s?.isAuthenticated == true) {
         context.go('/dashboard');
       }
+      // isPendingVerification handled by build() switching to verification screen
     } catch (e) {
-      if (!mounted) return;
-      _showError(_friendlyError(e));
+      if (mounted) _showSnack(_friendlyError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -89,26 +83,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Future<void> _register() async {
     if (!_regForm.currentState!.validate()) return;
     if (_regPass.text != _regConfirm.text) {
-      _showError('Passwords do not match');
+      _showSnack('Passwords do not match');
       return;
     }
     setState(() => _loading = true);
     try {
-      await ref.read(authProvider.notifier).registerWithFirebase(
+      await ref.read(authProvider.notifier).register(
             name: _regName.text.trim(),
             email: _regEmail.text.trim(),
             password: _regPass.text,
+            mode: _mode,
           );
-      if (!mounted) return;
-      final s = ref.read(authProvider).value;
-      if (s?.isPendingVerification == true) {
-        setState(() => _showVerification = true);
-      } else if (s?.isAuthenticated == true) {
-        context.go('/dashboard');
-      }
+      // isPendingVerification handled by build()
     } catch (e) {
-      if (!mounted) return;
-      _showError(_friendlyError(e));
+      if (mounted) _showSnack(_friendlyError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -118,91 +106,48 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     setState(() => _loading = true);
     try {
       await ref.read(authProvider.notifier).loginWithGoogle();
-      if (mounted) context.go('/dashboard');
+      if (mounted) {
+        final s = ref.read(authProvider).value;
+        if (s?.isAuthenticated == true) context.go('/dashboard');
+      }
     } catch (e) {
       final msg = e.toString().replaceAll('Exception:', '').trim();
       if (mounted && !msg.toLowerCase().contains('cancel')) {
-        _showError('Google sign-in failed: $msg');
+        _showSnack('Google sign-in failed: $msg');
       }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _resendVerification() async {
+  Future<void> _resendVerification(String email) async {
     setState(() { _resending = true; _resent = false; });
     try {
-      await ref.read(authServiceProvider).resendVerificationEmail();
-      if (mounted) {
-        setState(() => _resent = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Verification email sent!')),
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) return;
-      final msg = e.code == 'too-many-requests'
-          ? 'Too many requests. Please wait a few minutes.'
-          : 'Failed to send email. Please try again.';
-      _showError(msg);
+      await ref.read(authServiceProvider).resendVerificationEmail(email);
+      if (mounted) setState(() => _resent = true);
     } catch (_) {
-      if (mounted) _showError('Failed to send email. Please try again.');
+      if (mounted) _showSnack('Failed to send email. Please try again.');
     } finally {
       if (mounted) setState(() => _resending = false);
     }
   }
 
-  Future<void> _checkVerified() async {
-    setState(() => _checking = true);
-    try {
-      await ref.read(authProvider.notifier).checkEmailVerified();
-      if (!mounted) return;
-      final s = ref.read(authProvider).value;
-      if (s?.isAuthenticated == true) {
-        context.go('/dashboard');
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text(
-                  'Email not yet verified. Check your inbox and click the link.')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_friendlyError(e))),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _checking = false);
-    }
+  void _dismissVerification() {
+    // Reset auth state to not-pending so we go back to the login form
+    ref.read(authProvider.notifier).logout();
+    setState(() { _resent = false; _resending = false; });
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  void _showError(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
-  }
+  void _showSnack(String msg) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
   String _friendlyError(Object e) {
-    if (e is FirebaseAuthException) {
-      switch (e.code) {
-        case 'too-many-requests':
-          return 'Too many attempts. Please try again later.';
-        case 'user-disabled':
-          return 'This account has been disabled.';
-        case 'email-already-in-use':
-          return 'Email already registered. Try signing in instead.';
-        case 'weak-password':
-          return 'Password must be at least 6 characters.';
-        case 'invalid-email':
-          return 'Invalid email address.';
-        default:
-          return 'Authentication error. Please try again.';
-      }
-    }
-    return e.toString().replaceAll('Exception:', '').trim();
+    final s = e.toString().replaceAll('Exception:', '').trim();
+    if (s.contains('Invalid email or password')) return 'Invalid email or password';
+    if (s.contains('already registered')) return 'Email already registered. Try signing in.';
+    return s.isNotEmpty ? s : 'Something went wrong. Please try again.';
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -210,10 +155,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   @override
   Widget build(BuildContext context) {
     final c = context.fsc;
+    final authState = ref.watch(authProvider).value;
 
     // Show verification screen when pending
-    if (_showVerification) {
-      return _buildVerificationScreen(context, c);
+    if (authState?.isPendingVerification == true) {
+      return _buildVerificationScreen(
+        context,
+        c,
+        email: authState?.pendingEmail ?? '',
+        message: authState?.pendingMessage ?? 'Please check your inbox and verify your email.',
+      );
     }
 
     return Scaffold(
@@ -226,113 +177,72 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               children: [
                 // Logo
                 Container(
-                  width: 68,
-                  height: 68,
+                  width: 68, height: 68,
                   decoration: BoxDecoration(
                     color: c.teal,
                     borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                          color: c.teal.withAlpha(60),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6))
-                    ],
+                    boxShadow: [BoxShadow(color: c.teal.withAlpha(60), blurRadius: 16, offset: const Offset(0, 6))],
                   ),
                   child: Center(
-                    child: Text('F.',
-                        style: GoogleFonts.plusJakartaSans(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white)),
+                    child: Text('F.', style: GoogleFonts.plusJakartaSans(
+                        fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
                   ),
                 ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.1),
                 const SizedBox(height: 20),
-                Text('FinSense',
-                        style: GoogleFonts.plusJakartaSans(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                            color: c.textPrimary))
-                    .animate()
-                    .fadeIn(delay: 100.ms, duration: 300.ms),
+                Text('FinSense', style: GoogleFonts.plusJakartaSans(
+                    fontSize: 24, fontWeight: FontWeight.w800, color: c.textPrimary))
+                    .animate().fadeIn(delay: 100.ms, duration: 300.ms),
                 const SizedBox(height: 4),
-                Text('Elevated financial intelligence',
-                        style: GoogleFonts.plusJakartaSans(
-                            fontSize: 13, color: c.textTertiary))
-                    .animate()
-                    .fadeIn(delay: 150.ms, duration: 300.ms),
+                Text('Elevated financial intelligence', style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13, color: c.textTertiary))
+                    .animate().fadeIn(delay: 150.ms, duration: 300.ms),
                 const SizedBox(height: 28),
 
-                // Card
+                // Login card
                 Container(
                   decoration: BoxDecoration(
                     color: c.card,
                     borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.black
-                              .withAlpha(context.isDark ? 40 : 10),
-                          blurRadius: 20,
-                          offset: const Offset(0, 4))
-                    ],
+                    boxShadow: [BoxShadow(
+                        color: Colors.black.withAlpha(context.isDark ? 40 : 10),
+                        blurRadius: 20, offset: const Offset(0, 4))],
                   ),
-                  child: Column(
-                    children: [
-                      // Tab bar
-                      Container(
-                        margin: const EdgeInsets.all(16),
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                            color: c.surface,
-                            borderRadius: BorderRadius.circular(12)),
-                        child: TabBar(
-                          controller: _tabs,
-                          indicator: BoxDecoration(
-                              color: c.teal,
-                              borderRadius: BorderRadius.circular(10)),
-                          indicatorSize: TabBarIndicatorSize.tab,
-                          dividerColor: Colors.transparent,
-                          labelColor: Colors.white,
-                          unselectedLabelColor: c.textTertiary,
-                          labelStyle: GoogleFonts.plusJakartaSans(
-                              fontSize: 13, fontWeight: FontWeight.w600),
-                          unselectedLabelStyle: GoogleFonts.plusJakartaSans(
-                              fontSize: 13, fontWeight: FontWeight.w500),
-                          tabs: const [
-                            Tab(text: 'Sign in'),
-                            Tab(text: 'Sign up')
-                          ],
-                        ),
+                  child: Column(children: [
+                    // Tab bar
+                    Container(
+                      margin: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(12)),
+                      child: TabBar(
+                        controller: _tabs,
+                        indicator: BoxDecoration(color: c.teal, borderRadius: BorderRadius.circular(10)),
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        dividerColor: Colors.transparent,
+                        labelColor: Colors.white,
+                        unselectedLabelColor: c.textTertiary,
+                        labelStyle: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600),
+                        unselectedLabelStyle: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w500),
+                        tabs: const [Tab(text: 'Sign in'), Tab(text: 'Sign up')],
                       ),
-
-                      // Tab content
-                      SizedBox(
-                        height: 360,
-                        child: TabBarView(
-                          controller: _tabs,
-                          children: [
-                            _buildSignIn(context, c),
-                            _buildSignUp(context, c),
-                          ],
-                        ),
+                    ),
+                    SizedBox(
+                      height: 360,
+                      child: TabBarView(
+                        controller: _tabs,
+                        children: [_buildSignIn(context, c), _buildSignUp(context, c)],
                       ),
-                    ],
-                  ),
+                    ),
+                  ]),
                 ).animate().fadeIn(delay: 200.ms, duration: 400.ms).slideY(begin: 0.06),
 
                 const SizedBox(height: 20),
                 _buildDivider(c),
                 const SizedBox(height: 16),
 
-                // Google Sign-In button
-                _GoogleSignInButton(
-                        onTap: _loading ? null : _signInWithGoogle,
-                        loading: _loading)
-                    .animate()
-                    .fadeIn(delay: 300.ms),
-
+                _GoogleSignInButton(onTap: _loading ? null : _signInWithGoogle, loading: _loading)
+                    .animate().fadeIn(delay: 300.ms),
                 const SizedBox(height: 12),
 
-                // Demo mode button
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
@@ -340,14 +250,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: c.border),
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: Text('Try demo mode',
-                        style: GoogleFonts.plusJakartaSans(
-                            fontSize: 14,
-                            color: c.textSecondary,
-                            fontWeight: FontWeight.w500)),
+                    child: Text('Try demo mode', style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14, color: c.textSecondary, fontWeight: FontWeight.w500)),
                   ),
                 ).animate().fadeIn(delay: 350.ms),
               ],
@@ -358,7 +264,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  // ── Tab content ────────────────────────────────────────────────────────────
+  // ── Sign In tab ────────────────────────────────────────────────────────────
 
   Widget _buildSignIn(BuildContext context, FSColorScheme c) {
     return SingleChildScrollView(
@@ -367,42 +273,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         key: _loginForm,
         child: Column(children: [
           FSTextField(
-            label: 'Email address',
-            controller: _email,
+            label: 'Email address', controller: _email,
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
-            validator: (v) =>
-                v == null || !v.contains('@') ? 'Enter valid email' : null,
+            validator: (v) => v == null || !v.contains('@') ? 'Enter valid email' : null,
           ),
           const SizedBox(height: 12),
           FSTextField(
-            label: 'Password',
-            controller: _pass,
+            label: 'Password', controller: _pass,
             obscureText: _obscurePass,
             textInputAction: TextInputAction.done,
-            validator: (v) =>
-                v == null || v.length < 6 ? 'Min 6 characters' : null,
+            validator: (v) => v == null || v.length < 6 ? 'Min 6 characters' : null,
             suffix: IconButton(
-              icon: Icon(
-                  _obscurePass
-                      ? Icons.visibility_off_rounded
-                      : Icons.visibility_rounded,
-                  size: 18,
-                  color: c.textTertiary),
-              onPressed: () =>
-                  setState(() => _obscurePass = !_obscurePass),
+              icon: Icon(_obscurePass ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                  size: 18, color: c.textTertiary),
+              onPressed: () => setState(() => _obscurePass = !_obscurePass),
             ),
           ),
           const SizedBox(height: 16),
-          FSButton(
-              label: 'Sign in  →',
-              onPressed: _loading ? null : _login,
-              isLoading: _loading,
-              fullWidth: true),
+          FSButton(label: 'Sign in  →', onPressed: _loading ? null : _login,
+              isLoading: _loading, fullWidth: true),
         ]),
       ),
     );
   }
+
+  // ── Sign Up tab ────────────────────────────────────────────────────────────
 
   Widget _buildSignUp(BuildContext context, FSColorScheme c) {
     return SingleChildScrollView(
@@ -411,82 +307,60 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         key: _regForm,
         child: Column(children: [
           FSTextField(
-            label: 'Full name',
-            controller: _regName,
+            label: 'Full name', controller: _regName,
             textInputAction: TextInputAction.next,
-            validator: (v) =>
-                v == null || v.trim().isEmpty ? 'Name required' : null,
+            validator: (v) => v == null || v.trim().isEmpty ? 'Name required' : null,
           ),
           const SizedBox(height: 12),
           FSTextField(
-            label: 'Email address',
-            controller: _regEmail,
+            label: 'Email address', controller: _regEmail,
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
-            validator: (v) =>
-                v == null || !v.contains('@') ? 'Enter valid email' : null,
+            validator: (v) => v == null || !v.contains('@') ? 'Enter valid email' : null,
           ),
           const SizedBox(height: 12),
           FSTextField(
-            label: 'Password',
-            controller: _regPass,
+            label: 'Password', controller: _regPass,
             obscureText: _obscureRegPass,
             textInputAction: TextInputAction.next,
-            validator: (v) =>
-                v == null || v.length < 6 ? 'Min 6 characters' : null,
+            validator: (v) => v == null || v.length < 6 ? 'Min 6 characters' : null,
             suffix: IconButton(
-              icon: Icon(
-                  _obscureRegPass
-                      ? Icons.visibility_off_rounded
-                      : Icons.visibility_rounded,
-                  size: 18,
-                  color: c.textTertiary),
-              onPressed: () =>
-                  setState(() => _obscureRegPass = !_obscureRegPass),
+              icon: Icon(_obscureRegPass ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                  size: 18, color: c.textTertiary),
+              onPressed: () => setState(() => _obscureRegPass = !_obscureRegPass),
             ),
           ),
           const SizedBox(height: 12),
           FSTextField(
-            label: 'Confirm password',
-            controller: _regConfirm,
+            label: 'Confirm password', controller: _regConfirm,
             obscureText: _obscureRegPass,
             textInputAction: TextInputAction.done,
-            validator: (v) =>
-                v != _regPass.text ? 'Passwords do not match' : null,
+            validator: (v) => v != _regPass.text ? 'Passwords do not match' : null,
           ),
           const SizedBox(height: 14),
-          // Mode selector
           Row(children: [
-            _ModeChip(
-                label: 'Student',
-                icon: Icons.school_rounded,
-                selected: _mode == 'student',
-                onTap: () => setState(() => _mode = 'student'),
-                c: c),
+            _ModeChip(label: 'Student', icon: Icons.school_rounded,
+                selected: _mode == 'student', onTap: () => setState(() => _mode = 'student'), c: c),
             const SizedBox(width: 8),
-            _ModeChip(
-                label: 'Professional',
-                icon: Icons.work_rounded,
-                selected: _mode == 'professional',
-                onTap: () => setState(() => _mode = 'professional'),
-                c: c),
+            _ModeChip(label: 'Professional', icon: Icons.work_rounded,
+                selected: _mode == 'professional', onTap: () => setState(() => _mode = 'professional'), c: c),
           ]),
           const SizedBox(height: 16),
-          FSButton(
-              label: 'Create account',
-              onPressed: _loading ? null : _register,
-              isLoading: _loading,
-              fullWidth: true),
+          FSButton(label: 'Create account', onPressed: _loading ? null : _register,
+              isLoading: _loading, fullWidth: true),
         ]),
       ),
     );
   }
 
-  // ── Email verification screen ──────────────────────────────────────────────
+  // ── Email verification pending screen ──────────────────────────────────────
 
-  Widget _buildVerificationScreen(BuildContext context, FSColorScheme c) {
-    final email = FirebaseAuth.instance.currentUser?.email ?? '';
-
+  Widget _buildVerificationScreen(
+    BuildContext context,
+    FSColorScheme c, {
+    required String email,
+    required String message,
+  }) {
     return Scaffold(
       backgroundColor: c.background,
       body: SafeArea(
@@ -496,39 +370,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Icon
                 Container(
-                  width: 72,
-                  height: 72,
+                  width: 72, height: 72,
                   decoration: BoxDecoration(
                     color: c.teal.withAlpha(26),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: c.teal.withAlpha(60)),
                   ),
-                  child: Icon(Icons.mark_email_unread_rounded,
-                      size: 32, color: c.teal),
+                  child: Icon(Icons.mark_email_unread_rounded, size: 32, color: c.teal),
                 ).animate().fadeIn(duration: 400.ms).scale(begin: const Offset(0.8, 0.8)),
 
                 const SizedBox(height: 24),
-
-                Text('Verify your email',
-                    style: GoogleFonts.plusJakartaSans(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        color: c.textPrimary)),
+                Text('Check your email', style: GoogleFonts.plusJakartaSans(
+                    fontSize: 22, fontWeight: FontWeight.w800, color: c.textPrimary)),
                 const SizedBox(height: 8),
-                Text('We sent a verification link to',
-                    style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14, color: c.textSecondary)),
+                Text('We sent a verification link to', style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14, color: c.textSecondary)),
                 const SizedBox(height: 4),
-                Text(email,
-                    style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: c.textPrimary)),
-                const SizedBox(height: 8),
+                Text(email, style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14, fontWeight: FontWeight.w700, color: c.textPrimary)),
+                const SizedBox(height: 12),
                 Text(
-                  "Click the link in the email to activate your account. Check your spam folder if you don't see it.",
+                  'Click the link in the email to activate your account. '
+                  "Check your spam folder if you don't see it.",
                   textAlign: TextAlign.center,
                   style: GoogleFonts.plusJakartaSans(
                       fontSize: 13, color: c.textTertiary, height: 1.5),
@@ -536,28 +400,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                 const SizedBox(height: 28),
 
-                // Primary: check verified
+                // Primary: go sign in after verifying
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _checking ? null : _checkVerified,
+                    onPressed: _dismissVerification,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: c.teal,
-                      foregroundColor: Colors.white,
+                      backgroundColor: c.teal, foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       elevation: 0,
                     ),
-                    child: _checking
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white))
-                        : Text("I've verified my email →",
-                            style: GoogleFonts.plusJakartaSans(
-                                fontSize: 14, fontWeight: FontWeight.w700)),
+                    child: Text("I've verified — Sign In →",
+                        style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700)),
                   ),
                 ),
 
@@ -567,51 +422,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
-                    onPressed: (_resending || _resent) ? null : _resendVerification,
+                    onPressed: (_resending || _resent) ? null : () => _resendVerification(email),
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: c.teal.withAlpha(80)),
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
                     child: _resending
                         ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                            SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: c.teal)),
+                            SizedBox(width: 16, height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: c.teal)),
                             const SizedBox(width: 8),
-                            Text('Sending…',
-                                style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 14, color: c.teal)),
+                            Text('Sending…', style: GoogleFonts.plusJakartaSans(fontSize: 14, color: c.teal)),
                           ])
                         : _resent
-                            ? Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                    Icon(Icons.check_circle_outline_rounded,
-                                        size: 16, color: c.teal),
-                                    const SizedBox(width: 6),
-                                    Text('Email sent',
-                                        style: GoogleFonts.plusJakartaSans(
-                                            fontSize: 14, color: c.teal)),
-                                  ])
+                            ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                Icon(Icons.check_circle_outline_rounded, size: 16, color: c.teal),
+                                const SizedBox(width: 6),
+                                Text('Email sent', style: GoogleFonts.plusJakartaSans(fontSize: 14, color: c.teal)),
+                              ])
                             : Text('Resend verification email',
-                                style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 14, color: c.teal)),
+                                style: GoogleFonts.plusJakartaSans(fontSize: 14, color: c.teal)),
                   ),
                 ),
 
                 const SizedBox(height: 20),
-
-                // Back to sign in
                 TextButton(
-                  onPressed: () =>
-                      setState(() { _showVerification = false; _resent = false; }),
+                  onPressed: _dismissVerification,
                   child: Text('Use a different account',
-                      style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13, color: c.textTertiary)),
+                      style: GoogleFonts.plusJakartaSans(fontSize: 13, color: c.textTertiary)),
                 ),
               ],
             ),
@@ -626,9 +465,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       Expanded(child: Divider(color: c.border)),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Text('or',
-            style: GoogleFonts.plusJakartaSans(
-                fontSize: 12, color: c.textTertiary)),
+        child: Text('or', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: c.textTertiary)),
       ),
       Expanded(child: Divider(color: c.border)),
     ]);
@@ -643,12 +480,7 @@ class _ModeChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   final FSColorScheme c;
-  const _ModeChip(
-      {required this.label,
-      required this.icon,
-      required this.selected,
-      required this.onTap,
-      required this.c});
+  const _ModeChip({required this.label, required this.icon, required this.selected, required this.onTap, required this.c});
 
   @override
   Widget build(BuildContext context) {
@@ -661,18 +493,14 @@ class _ModeChip extends StatelessWidget {
           decoration: BoxDecoration(
             color: selected ? c.tealDim : c.surface,
             borderRadius: BorderRadius.circular(10),
-            border:
-                Border.all(color: selected ? c.teal.withAlpha(100) : c.border),
+            border: Border.all(color: selected ? c.teal.withAlpha(100) : c.border),
           ),
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(icon,
-                size: 16, color: selected ? c.teal : c.textTertiary),
+            Icon(icon, size: 16, color: selected ? c.teal : c.textTertiary),
             const SizedBox(width: 6),
-            Text(label,
-                style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: selected ? c.teal : c.textSecondary)),
+            Text(label, style: GoogleFonts.plusJakartaSans(
+                fontSize: 12, fontWeight: FontWeight.w600,
+                color: selected ? c.teal : c.textSecondary)),
           ]),
         ),
       ),
@@ -695,31 +523,18 @@ class _GoogleSignInButton extends StatelessWidget {
           side: const BorderSide(color: Color(0xFFDDE1E6)),
           backgroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         child: loading
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Color(0xFF4285F4)),
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CustomPaint(painter: _GoogleLogoPainter())),
-                  const SizedBox(width: 10),
-                  Text('Continue with Google',
-                      style: GoogleFonts.plusJakartaSans(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: const Color(0xFF191C1E))),
-                ],
-              ),
+            ? const SizedBox(width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4285F4)))
+            : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                SizedBox(width: 20, height: 20,
+                    child: CustomPaint(painter: _GoogleLogoPainter())),
+                const SizedBox(width: 10),
+                Text('Continue with Google', style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14, fontWeight: FontWeight.w500, color: const Color(0xFF191C1E))),
+              ]),
       ),
     );
   }
@@ -732,17 +547,13 @@ class _GoogleLogoPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final r = size.width / 2;
     paint.color = const Color(0xFF4285F4);
-    canvas.drawArc(
-        Rect.fromCircle(center: center, radius: r), -1.57, 1.57, true, paint);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: r), -1.57, 1.57, true, paint);
     paint.color = const Color(0xFF34A853);
-    canvas.drawArc(
-        Rect.fromCircle(center: center, radius: r), 0.0, 1.57, true, paint);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: r), 0.0, 1.57, true, paint);
     paint.color = const Color(0xFFFBBC05);
-    canvas.drawArc(
-        Rect.fromCircle(center: center, radius: r), 1.57, 1.57, true, paint);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: r), 1.57, 1.57, true, paint);
     paint.color = const Color(0xFFEA4335);
-    canvas.drawArc(
-        Rect.fromCircle(center: center, radius: r), 3.14, 1.57, true, paint);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: r), 3.14, 1.57, true, paint);
     paint.color = Colors.white;
     canvas.drawCircle(center, r * 0.55, paint);
   }
