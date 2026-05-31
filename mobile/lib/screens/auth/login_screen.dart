@@ -66,6 +66,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
     }
   }
 
+  Future<void> _signInWithGoogle() async {
+    setState(() => _loading = true);
+    try {
+      await ref.read(authProvider.notifier).loginWithGoogle();
+      if (mounted) context.go('/dashboard');
+    } catch (e) {
+      final msg = e.toString().replaceAll('Exception:', '').trim();
+      if (mounted && !msg.contains('cancelled')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Google sign-in failed: $msg')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   Future<void> _register() async {
     if (!_regForm.currentState!.validate()) return;
     setState(() => _loading = true);
@@ -163,6 +180,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
                 const SizedBox(height: 20),
                 _buildDivider(c),
                 const SizedBox(height: 16),
+
+                // Google Sign-In button
+                _GoogleSignInButton(onTap: _loading ? null : _signInWithGoogle, loading: _loading).animate().fadeIn(delay: 300.ms),
+
+                const SizedBox(height: 12),
 
                 // Demo mode button
                 SizedBox(
@@ -322,4 +344,80 @@ class _ModeChip extends StatelessWidget {
       ),
     );
   }
+}
+
+class _GoogleSignInButton extends StatelessWidget {
+  final VoidCallback? onTap;
+  final bool loading;
+  const _GoogleSignInButton({required this.onTap, required this.loading});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: Color(0xFFDDE1E6)),
+          backgroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        child: loading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4285F4)),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Google "G" logo
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CustomPaint(painter: _GoogleLogoPainter()),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Continue with Google',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF191C1E),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class _GoogleLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..style = PaintingStyle.fill;
+    final center = Offset(size.width / 2, size.height / 2);
+    final r = size.width / 2;
+
+    // Blue top-right
+    paint.color = const Color(0xFF4285F4);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: r), -1.57, 1.57, true, paint);
+    // Green bottom-right
+    paint.color = const Color(0xFF34A853);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: r), 0.0, 1.57, true, paint);
+    // Yellow bottom-left
+    paint.color = const Color(0xFFFBBC05);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: r), 1.57, 1.57, true, paint);
+    // Red top-left
+    paint.color = const Color(0xFFEA4335);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: r), 3.14, 1.57, true, paint);
+    // White center hole
+    paint.color = Colors.white;
+    canvas.drawCircle(center, r * 0.55, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

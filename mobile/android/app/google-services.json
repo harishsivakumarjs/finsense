@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "604608810400",
+    "project_id": "finsense-finance-app",
+    "storage_bucket": "finsense-finance-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:604608810400:android:92aeffb2c648ff5518e8c5",
+        "android_client_info": {
+          "package_name": "com.finsense.finsense_mobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "604608810400-h8hcvjnanlrr91ilqblsv42sbv9l66kd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.finsense.finsense_mobile",
+            "certificate_hash": "ee286df672f9c062475746a9ea725eff6a0a9974"
+          }
+        },
+        {
+          "client_id": "604608810400-ti1fvo9akhf3e3u601uku8il3va4cg40.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDZrB9V7eHHQKP5LWXjoUKRpJJskaZ21Jw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "604608810400-ti1fvo9akhf3e3u601uku8il3va4cg40.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

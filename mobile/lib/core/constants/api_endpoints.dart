@@ -2,11 +2,12 @@ class ApiEndpoints {
   ApiEndpoints._();
 
   // Auth
-  static const register   = '/auth/register';
-  static const login      = '/auth/login';
-  static const logout     = '/auth/logout';
-  static const me         = '/auth/me';
-  static const mode       = '/auth/mode';
+  static const register        = '/auth/register';
+  static const login           = '/auth/login';
+  static const logout          = '/auth/logout';
+  static const me              = '/auth/me';
+  static const mode            = '/auth/mode';
+  static const googleFirebase  = '/auth/google/firebase';
 
   // Dashboard
   static const dashboard  = '/dashboard';

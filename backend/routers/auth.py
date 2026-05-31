@@ -16,11 +16,13 @@ from models import (
     Investment, CreatorIncome, FriendLedger, NetWorthSnapshot, Goal,
     TaxDeduction, AdvanceTaxPayment, InsurancePolicy,
 )
-from schemas.auth import UserCreate, UserLogin, UserOut, Token, ModeUpdate, ProfileUpdate, PasswordUpdate
+from schemas.auth import UserCreate, UserLogin, UserOut, Token, ModeUpdate, ProfileUpdate, PasswordUpdate, FirebaseAuthPayload
 
 load_dotenv()
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+FIREBASE_WEB_API_KEY = os.getenv("FIREBASE_WEB_API_KEY", "AIzaSyAX3Iw8m-ax9o5hbLXlXcoz8hvbWRloQqI")
 
 JWT_SECRET = os.getenv("JWT_SECRET", "super-secret-key-change-in-production-min-32")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
@@ -106,6 +108,55 @@ def login(payload: UserLogin, response: Response, db: Session = Depends(get_db))
 def logout(response: Response):
     response.delete_cookie("access_token")
     return {"message": "Logged out successfully"}
+
+
+@router.post("/google/firebase", response_model=Token)
+def google_firebase_login(payload: FirebaseAuthPayload, db: Session = Depends(get_db)):
+    """Verify a Firebase ID token and return a FinSense JWT. Creates the user if they don't exist."""
+    import httpx as _httpx
+    try:
+        resp = _httpx.post(
+            f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={FIREBASE_WEB_API_KEY}",
+            json={"idToken": payload.id_token},
+            timeout=10.0,
+        )
+    except _httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Firebase verification service unreachable")
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid or expired Google token")
+
+    firebase_users = resp.json().get("users", [])
+    if not firebase_users:
+        raise HTTPException(status_code=401, detail="Google token verification failed")
+
+    fb = firebase_users[0]
+    email = fb.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Google account has no email address")
+
+    name = fb.get("displayName") or email.split("@")[0]
+    photo = fb.get("photoUrl")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = User(
+            email=email,
+            password_hash=hash_password(str(uuid.uuid4())),
+            name=name,
+            photo=photo,
+            mode="earner",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    elif photo and not user.photo:
+        user.photo = photo
+        db.commit()
+        db.refresh(user)
+
+    token = create_access_token(str(user.id), user.email)
+    return Token(access_token=token, user=UserOut.model_validate(user))
 
 
 @router.get("/me", response_model=UserOut)

@@ -74,3 +74,7 @@ class PasswordUpdate(BaseModel):
         if len(v) < 6:
             raise ValueError("Password must be at least 6 characters")
         return v
+
+
+class FirebaseAuthPayload(BaseModel):
+    id_token: str

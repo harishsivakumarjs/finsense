@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Check, Zap, TrendingUp, Shield, BarChart3, Mail, RefreshCw } from 'lucide-react'
+import { signInWithPopup } from 'firebase/auth'
 import toast from 'react-hot-toast'
 import api from '../api/axios'
+import { auth, googleProvider } from '../firebase'
 import useStore from '../store/useStore'
 
 const DEMO_EMAIL = 'demo@finsense.app'
@@ -156,10 +158,73 @@ function LeftPanel() {
   )
 }
 
+/* ── Shared Google Sign-In hook ── */
+function useGoogleAuth() {
+  const navigate = useNavigate()
+  const { setUser, setToken } = useStore()
+  const [googleLoading, setGoogleLoading] = useState(false)
+
+  const signInWithGoogle = async () => {
+    setGoogleLoading(true)
+    try {
+      const result = await signInWithPopup(auth, googleProvider)
+      const idToken = await result.user.getIdToken()
+      const res = await api.post('/auth/google/firebase', { id_token: idToken })
+      setToken(res.data.access_token)
+      setUser(res.data.user)
+      toast.success(`Welcome, ${res.data.user.name}!`)
+      navigate('/dashboard')
+    } catch (err) {
+      // User closed the popup — don't show an error
+      if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') return
+      toast.error(err?.response?.data?.detail || 'Google sign-in failed. Please try again.')
+    } finally {
+      setGoogleLoading(false)
+    }
+  }
+
+  return { signInWithGoogle, googleLoading }
+}
+
+/* ── Reusable Google button ── */
+function GoogleButton({ onClick, disabled }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="w-full py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2.5"
+      style={{
+        backgroundColor: '#ffffff',
+        border: '1px solid #dde1e6',
+        color: '#191c1e',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        opacity: disabled ? 0.7 : 1,
+      }}
+    >
+      {disabled ? (
+        <svg className="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" stroke="#dde1e6" strokeWidth="3" />
+          <path d="M12 2a10 10 0 0 1 10 10" stroke="#4285F4" strokeWidth="3" strokeLinecap="round" />
+        </svg>
+      ) : (
+        <svg width="18" height="18" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M47.532 24.552c0-1.636-.132-3.2-.384-4.704H24v9.12h13.184c-.576 3.024-2.256 5.592-4.8 7.32v6.072h7.776c4.56-4.2 7.2-10.4 7.2-17.808z" fill="#4285F4"/>
+          <path d="M24 48c6.48 0 11.904-2.136 15.872-5.784l-7.776-6.072c-2.16 1.464-4.92 2.328-8.096 2.328-6.24 0-11.52-4.224-13.416-9.888H2.616v6.24C6.576 42.696 14.76 48 24 48z" fill="#34A853"/>
+          <path d="M10.584 28.584A14.4 14.4 0 0 1 9.6 24c0-1.584.288-3.12.768-4.584v-6.24H2.616A23.952 23.952 0 0 0 0 24c0 3.888.936 7.56 2.616 10.824l7.968-6.24z" fill="#FBBC05"/>
+          <path d="M24 9.528c3.504 0 6.648 1.2 9.12 3.576l6.84-6.84C35.904 2.376 30.48 0 24 0 14.76 0 6.576 5.304 2.616 13.176l7.968 6.24C12.48 13.752 17.76 9.528 24 9.528z" fill="#EA4335"/>
+        </svg>
+      )}
+      {disabled ? 'Signing in with Google…' : 'Continue with Google'}
+    </button>
+  )
+}
+
 /* ── Sign In Form ── */
 function SignInForm({ onSwitchTab }) {
   const navigate = useNavigate()
   const { setUser, setToken, setAvatar } = useStore()
+  const { signInWithGoogle, googleLoading } = useGoogleAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
@@ -271,27 +336,7 @@ function SignInForm({ onSwitchTab }) {
         <div className="flex-1 h-px" style={{ backgroundColor: '#eceef1' }} />
       </div>
 
-      {/* Google Sign In */}
-      <button
-        type="button"
-        onClick={() => { window.location.href = '/api/auth/google' }}
-        disabled={loading || demoLoading}
-        className="w-full py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2.5"
-        style={{
-          backgroundColor: '#ffffff',
-          border: '1px solid #dde1e6',
-          color: '#191c1e',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-        }}
-      >
-        <svg width="18" height="18" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M47.532 24.552c0-1.636-.132-3.2-.384-4.704H24v9.12h13.184c-.576 3.024-2.256 5.592-4.8 7.32v6.072h7.776c4.56-4.2 7.2-10.4 7.2-17.808z" fill="#4285F4"/>
-          <path d="M24 48c6.48 0 11.904-2.136 15.872-5.784l-7.776-6.072c-2.16 1.464-4.92 2.328-8.096 2.328-6.24 0-11.52-4.224-13.416-9.888H2.616v6.24C6.576 42.696 14.76 48 24 48z" fill="#34A853"/>
-          <path d="M10.584 28.584A14.4 14.4 0 0 1 9.6 24c0-1.584.288-3.12.768-4.584v-6.24H2.616A23.952 23.952 0 0 0 0 24c0 3.888.936 7.56 2.616 10.824l7.968-6.24z" fill="#FBBC05"/>
-          <path d="M24 9.528c3.504 0 6.648 1.2 9.12 3.576l6.84-6.84C35.904 2.376 30.48 0 24 0 14.76 0 6.576 5.304 2.616 13.176l7.968 6.24C12.48 13.752 17.76 9.528 24 9.528z" fill="#EA4335"/>
-        </svg>
-        Continue with Google
-      </button>
+      <GoogleButton onClick={signInWithGoogle} disabled={loading || demoLoading || googleLoading} />
 
       <button
         type="button"
@@ -419,6 +464,7 @@ function EmailVerificationScreen({ email, onSwitchTab }) {
 function SignUpForm({ onSwitchTab }) {
   const navigate = useNavigate()
   const { setUser, setToken, setAvatar } = useStore()
+  const { signInWithGoogle, googleLoading } = useGoogleAuth()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -576,27 +622,7 @@ function SignUpForm({ onSwitchTab }) {
         {loading ? 'Creating account...' : 'Create account →'}
       </button>
 
-      {/* Google Sign Up */}
-      <button
-        type="button"
-        onClick={() => { window.location.href = '/api/auth/google' }}
-        disabled={loading || demoLoading}
-        className="w-full py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2.5"
-        style={{
-          backgroundColor: '#ffffff',
-          border: '1px solid #dde1e6',
-          color: '#191c1e',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-        }}
-      >
-        <svg width="18" height="18" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M47.532 24.552c0-1.636-.132-3.2-.384-4.704H24v9.12h13.184c-.576 3.024-2.256 5.592-4.8 7.32v6.072h7.776c4.56-4.2 7.2-10.4 7.2-17.808z" fill="#4285F4"/>
-          <path d="M24 48c6.48 0 11.904-2.136 15.872-5.784l-7.776-6.072c-2.16 1.464-4.92 2.328-8.096 2.328-6.24 0-11.52-4.224-13.416-9.888H2.616v6.24C6.576 42.696 14.76 48 24 48z" fill="#34A853"/>
-          <path d="M10.584 28.584A14.4 14.4 0 0 1 9.6 24c0-1.584.288-3.12.768-4.584v-6.24H2.616A23.952 23.952 0 0 0 0 24c0 3.888.936 7.56 2.616 10.824l7.968-6.24z" fill="#FBBC05"/>
-          <path d="M24 9.528c3.504 0 6.648 1.2 9.12 3.576l6.84-6.84C35.904 2.376 30.48 0 24 0 14.76 0 6.576 5.304 2.616 13.176l7.968 6.24C12.48 13.752 17.76 9.528 24 9.528z" fill="#EA4335"/>
-        </svg>
-        Continue with Google
-      </button>
+      <GoogleButton onClick={signInWithGoogle} disabled={loading || demoLoading || googleLoading} />
 
       <button
         type="button"
@@ -633,27 +659,7 @@ function SignUpForm({ onSwitchTab }) {
 export default function AuthPage({ defaultTab = 'signin' }) {
   const [activeTab, setActiveTab] = useState(defaultTab)
   const navigate = useNavigate()
-  const location = useLocation()
-  const { setUser, setToken, setAvatar } = useStore()
-
-  // Handle Google OAuth callback: /login?token=xxx&user=...
-  useEffect(() => {
-    const params = new URLSearchParams(location.search)
-    const token = params.get('token')
-    const userRaw = params.get('user')
-    if (token) {
-      try {
-        const user = userRaw ? JSON.parse(decodeURIComponent(userRaw)) : null
-        setAvatar(null)
-        setToken(token)
-        if (user) setUser(user)
-        toast.success(`Welcome${user?.name ? `, ${user.name}` : ''}!`)
-        navigate('/dashboard', { replace: true })
-      } catch {
-        toast.error('Google sign-in failed. Please try again.')
-      }
-    }
-  }, [])
+  const { setUser, setToken } = useStore()
 
   return (
     <div className="min-h-screen flex" style={{ backgroundColor: '#f7f9fc' }}>

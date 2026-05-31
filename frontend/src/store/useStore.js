@@ -1,5 +1,7 @@
 import { create } from 'zustand'
+import { signOut } from 'firebase/auth'
 import api from '../api/axios'
+import { auth } from '../firebase'
 
 const useStore = create((set, get) => ({
   // Theme
@@ -64,6 +66,7 @@ const useStore = create((set, get) => ({
   },
 
   logout: () => {
+    signOut(auth).catch(() => {})
     localStorage.removeItem('finsense_token')
     localStorage.removeItem('finsense_user')
     localStorage.removeItem('finsense_avatar')
