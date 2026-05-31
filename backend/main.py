@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime
 from fastapi import FastAPI
@@ -11,14 +12,22 @@ from database import SessionLocal
 from routers import auth, dashboard, income, expenses, loans, trades, investments, creator, tax, networth, friends, simulator, reports
 from routers import insurance
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(
     title="FinSense API",
     description="Personal Finance Management API",
     version="1.0.0",
 )
 
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+# Strip whitespace from each origin so "https://a.com, https://b.com" works correctly.
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+    if o.strip()
+]
 
+# CORSMiddleware must be registered before routers.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -121,10 +130,35 @@ scheduler.add_job(
 )
 
 
+def _run_migrations() -> None:
+    """
+    Apply all pending Alembic migrations at startup.
+
+    This means `alembic upgrade head` runs automatically on every Render
+    deployment — no manual SSH or CLI step required.  The migration file
+    (0007_email_verification.py) uses IF NOT EXISTS SQL so it is safe to
+    execute repeatedly without side-effects.
+    """
+    try:
+        from alembic.config import Config
+        from alembic import command
+
+        alembic_ini = os.path.join(os.path.dirname(__file__), "alembic.ini")
+        cfg = Config(alembic_ini)
+        command.upgrade(cfg, "head")
+        logger.info("✓ Database migrations applied (alembic upgrade head)")
+    except Exception as exc:
+        # Log the error but do NOT crash the server.  If the DB is already
+        # up-to-date this call is a no-op; an unexpected failure here should
+        # not prevent the API from starting so operators can investigate.
+        logger.error("⚠ Migration runner error (non-fatal): %s", exc)
+
+
 @app.on_event("startup")
 def startup_event():
+    _run_migrations()
     scheduler.start()
-    print("FinSense API started. Scheduler running.")
+    logger.info("FinSense API started. Scheduler running.")
 
 
 @app.on_event("shutdown")

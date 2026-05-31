@@ -4,10 +4,16 @@ Revision ID: 0007
 Revises: 0006
 Create Date: 2026-05-31 00:00:00.000000
 
+Uses raw SQL with IF NOT EXISTS so the migration is safe to run in ANY
+database state:
+  - columns never existed  → they are created
+  - columns already exist  → no-op, no error
+  - alembic_version shows 0006 → upgrade runs this script
+  - alembic_version shows 0007 but columns were dropped → run 0008 safety net
 """
 from typing import Sequence, Union
 from alembic import op
-import sqlalchemy as sa
+
 
 revision: str = '0007'
 down_revision: Union[str, None] = '0006'
@@ -16,21 +22,27 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('users', sa.Column(
-        'email_verified',
-        sa.Boolean(),
-        nullable=False,
-        server_default='false',
-    ))
-    op.add_column('users', sa.Column('verification_token', sa.String(64), nullable=True))
-    op.add_column('users', sa.Column('verification_token_expires_at', sa.DateTime(), nullable=True))
+    # ADD COLUMN IF NOT EXISTS is idempotent — safe whether or not the
+    # columns were previously created manually and then removed.
+    op.execute("""
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false
+    """)
+    op.execute("""
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS verification_token VARCHAR(64)
+    """)
+    op.execute("""
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS verification_token_expires_at TIMESTAMP
+    """)
 
-    # Mark ALL existing users as verified so they are not locked out.
-    # New registrations will start with email_verified = false.
-    op.execute("UPDATE users SET email_verified = true")
+    # Mark every existing row as verified so no one is locked out.
+    # New registrations start with email_verified = false (set in application code).
+    op.execute("UPDATE users SET email_verified = true WHERE email_verified = false")
 
 
 def downgrade() -> None:
-    op.drop_column('users', 'verification_token_expires_at')
-    op.drop_column('users', 'verification_token')
-    op.drop_column('users', 'email_verified')
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS verification_token_expires_at")
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS verification_token")
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS email_verified")
